@@ -1,0 +1,49 @@
+# --- Python/General ---
+
+# Python virtual environment
+venv/
+env/
+ENV/
+
+# Python bytecode and cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Unit test / coverage reports
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor settings
+.vscode/
+.idea/
+
+# --- Project Specific Ignores ---
+
+# Sensitive environment variables (CRITICAL: Never commit the actual .env file)
+.env
+
+# Application data (Do not commit raw data or models)
+data/raw/*
+data/processed/*
+models/*
+
+# Exceptions for data/models (To keep the directories tracked, but ignore contents)
+# This assumes you have placed a .gitkeep file inside these empty directories.
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep

@@ -1,0 +1,13 @@
+# Web Framework
+Flask
+
+# Configuration Management (for .env files)
+python-dotenv
+
+# Document Parsing (assuming PDF support as recommended)
+pypdf
+
+# Core ML/Data Science (Needed for embeddings and similarity)
+numpy
+scipy
+# Note: Specific LLM/Embedding API clients (e.g., openai, anthropic, transformers) will be added later.
