@@ -5,7 +5,6 @@ Web application entry point and routes (Flask).
 import os
 from flask import Flask, render_template, request, redirect, url_for
 
-# We'll put our Flask app inside a function for better practice
 def create_app():
     
     # __name__ tells Flask where to look for templates and static files

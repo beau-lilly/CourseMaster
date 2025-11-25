@@ -86,7 +86,8 @@ class DatabaseManager:
         VALUES (?, ?, ?, ?)
         """
         with self._get_connection() as conn:
-            conn.execute(sql, (doc.doc_id, doc.original_filename, doc.extracted_text, doc.uploaded_at))
+            # Convert datetime to string explicitly
+            conn.execute(sql, (doc.doc_id, doc.original_filename, doc.extracted_text, doc.uploaded_at.isoformat()))
             conn.commit()
         return doc
 
@@ -104,7 +105,8 @@ class DatabaseManager:
         VALUES (?, ?, ?)
         """
         with self._get_connection() as conn:
-            conn.execute(sql, (problem.problem_id, problem.problem_text, problem.uploaded_at))
+            # Convert datetime to string explicitly
+            conn.execute(sql, (problem.problem_id, problem.problem_text, problem.uploaded_at.isoformat()))
             conn.commit()
         return problem
 
