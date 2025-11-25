@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+    <h2>Result</h2>
+
+    <article>
+        <header><strong>Your Question:</strong></header>
+        <p>{{ question }}</p>
+    </article>
+
+    <article>
+        <header><strong>Explanation:</strong></header>
+        <p>{{ explanation }}</p>
+    </article>
+
+    <hr>
+    
+    <h3>Relevant Chunks</h3>
+    <p>These are the parts of your documents used to generate the answer.</p>
+
+    {% for chunk in chunks %}
+        <details>
+            <summary>Chunk {{ loop.index }} (from: {{ chunk.source }})</summary>
+            <p>{{ chunk.text }}</p>
+        </details>
+    {% else %}
+        <p>No relevant chunks were found.</p>
+    {% endfor %}
+
+    <br>
+    <a href="{{ url_for('index') }}" role="button">Ask Another Question</a>
+
+{% endblock %}

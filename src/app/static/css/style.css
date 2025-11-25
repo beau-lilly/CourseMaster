@@ -1,2 +1,9 @@
 /* Global styles */
 body { font-family: sans-serif; }
+
+
+details {
+    background-color: #f7f7f7;
+    border: 1px solid #ddd;
+    margin-bottom: 1rem;
+}
