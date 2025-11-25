@@ -1,6 +1,7 @@
 # tests/test_database.py
 
 import os
+import shutil
 import numpy as np
 import uuid
 from numpy.testing import assert_array_equal
@@ -11,6 +12,7 @@ from src.core.types import Chunk
 
 # We'll use a temporary DB file for this test
 TEST_DB_PATH = "tests/test_suite.db" # Save the test DB inside the tests folder
+TEST_CHROMA_PATH = "tests/test_suite_chroma_db"
 
 def test_database_operations():
     """
@@ -22,13 +24,17 @@ def test_database_operations():
     # Ensure no old test DB is lying around
     if os.path.exists(TEST_DB_PATH):
         os.remove(TEST_DB_PATH)
+    if os.path.exists(TEST_CHROMA_PATH):
+        shutil.rmtree(TEST_CHROMA_PATH)
 
     db = None
     try:
         # 1. INITIALIZATION TEST
         db = DatabaseManager(db_path=TEST_DB_PATH)
         assert os.path.exists(TEST_DB_PATH)
-        print("  [PASS] 1. Initialization: Database file created.")
+        # Chroma folder is created lazily or on init depending on version, check if collection exists
+        assert db.collection is not None
+        print("  [PASS] 1. Initialization: Database and Chroma collection created.")
 
         # 2. DOCUMENT ADD/GET TEST
         doc = db.add_document("test_doc.pdf", "Full document text.")
@@ -41,7 +47,7 @@ def test_database_operations():
         print("  [PASS] 3. Problems: add_problem() works.")
 
         # 4. CHUNK & EMBEDDING I/O TEST
-        fake_embedding = np.array([0.5, 0.4, 0.3], dtype=np.float32)
+        fake_embedding = np.array([0.1, 0.2, 0.3], dtype=np.float32)
         test_chunk = Chunk(
             chunk_id=f"chunk_{uuid.uuid4()}",
             doc_id=doc.doc_id,
@@ -51,20 +57,19 @@ def test_database_operations():
         )
         db.save_chunks([test_chunk])
 
-        # 4a. Test get_chunk_text
+        # 4a. Test get_chunk_text (from SQLite)
         retrieved_text = db.get_chunk_text(test_chunk.chunk_id)
         assert retrieved_text == "This is a test chunk."
         print("  [PASS] 4a. Chunks: get_chunk_text() works.")
 
-        # 4b. Test get_all_chunks_with_embeddings
-        retrieved_chunks = db.get_all_chunks_with_embeddings()
+        # 4b. Test query_similar_chunks (from ChromaDB)
+        # We query with the exact same embedding, should find the chunk
+        results = db.query_similar_chunks(fake_embedding, n_results=1)
         
-        assert len(retrieved_chunks) == 1
-        retrieved_id, retrieved_embedding = retrieved_chunks[0]
-        
-        assert retrieved_id == test_chunk.chunk_id
-        assert_array_equal(retrieved_embedding, fake_embedding)
-        print("  [PASS] 4b. Chunks: get_all_chunks_with_embeddings() works.")
+        assert len(results) == 1
+        assert results[0]['chunk_id'] == test_chunk.chunk_id
+        assert results[0]['chunk_text'] == "This is a test chunk."
+        print("  [PASS] 4b. Chunks: query_similar_chunks() works.")
 
         print("\n--- TEST FUNCTION PASSED! ---")
 
@@ -72,4 +77,6 @@ def test_database_operations():
         # 5. CLEANUP
         if os.path.exists(TEST_DB_PATH):
             os.remove(TEST_DB_PATH)
-            print(f"Cleanup: Removed {TEST_DB_PATH}.")
+        if os.path.exists(TEST_CHROMA_PATH):
+            shutil.rmtree(TEST_CHROMA_PATH)
+        print(f"Cleanup: Removed test files.")
