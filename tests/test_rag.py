@@ -20,27 +20,29 @@ def test_answer_question_stub(sample_chunks):
     """Test the orchestration function using the stub provider."""
     query = "What is Python?"
     
-    # Mock dependencies to avoid real DB/VectorStore calls
-    mock_db = MagicMock()
-    # When searching, return sample_chunks
-    mock_vector_store = MagicMock()
-    mock_vector_store.search.return_value = [
-        MagicMock(chunk=c, similarity_score=0.9) for c in sample_chunks
-    ]
-    
-    result = answer_question(
-        question_text=query,
-        prompt_style=PromptStyle.MINIMAL,
-        vector_store=mock_vector_store,
-        db_manager=mock_db
-    )
-    
-    assert isinstance(result, RAGResult)
-    assert result.question == query
-    assert len(result.used_chunks) == 2
-    # The stub response defined in rag.py
-    assert "[STUB RESPONSE]" in result.answer
-    assert query in result.answer
+    # Ensure no API key is set for this test to trigger stub
+    with patch.dict('os.environ', {}, clear=True):
+        # Mock dependencies to avoid real DB/VectorStore calls
+        mock_db = MagicMock()
+        # When searching, return sample_chunks
+        mock_vector_store = MagicMock()
+        mock_vector_store.search.return_value = [
+            MagicMock(chunk=c, similarity_score=0.9) for c in sample_chunks
+        ]
+        
+        result = answer_question(
+            question_text=query,
+            prompt_style=PromptStyle.MINIMAL,
+            vector_store=mock_vector_store,
+            db_manager=mock_db
+        )
+        
+        assert isinstance(result, RAGResult)
+        assert result.question == query
+        assert len(result.used_chunks) == 2
+        # The stub response defined in rag.py
+        assert "[STUB RESPONSE]" in result.answer
+        assert query in result.answer
 
 def test_answer_question_styles(sample_chunks):
     """Test that the function accepts different styles without error."""

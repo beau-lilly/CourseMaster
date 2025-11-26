@@ -1,12 +1,17 @@
 """
 RAG Orchestration using LangChain.
 """
+import os
 from typing import List, Optional
 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.llms import FakeListLLM
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None  # Fallback if library not present
 
 from src.core.types import Chunk, PromptStyle, RAGResult
 from src.core.vector_store import VectorStore
@@ -136,9 +141,20 @@ def answer_question(
     # Select template
     prompt_template = PROMPT_TEMPLATES.get(prompt_style, PROMPT_TEMPLATES[PromptStyle.MINIMAL])
     
-    # Stub LLM (This would be replaced by ChatOpenAI or similar in production)
-    # We use FakeListLLM to satisfy the requirement of a "stub"
-    llm = FakeListLLM(responses=[f"[STUB RESPONSE] Processed prompt for query: {question_text}"])
+    # Initialize LLM
+    llm = None
+    api_key = os.environ.get("OPENAI_API_KEY")
+    
+    if api_key and ChatOpenAI:
+        # Use real LLM if API key is present
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",  # Or "gpt-3.5-turbo"
+            temperature=0,
+            openai_api_key=api_key
+        )
+    else:
+        # Use Stub LLM if no API key or explicitly requested
+        llm = FakeListLLM(responses=[f"[STUB RESPONSE] Processed prompt for query: {question_text}"])
     
     # Define chain using LCEL
     chain = (

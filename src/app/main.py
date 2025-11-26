@@ -9,6 +9,7 @@ from flask import Flask, render_template, request, redirect, url_for
 # Note: We import inside routes or here if circular deps aren't an issue.
 # Here is fine as src.app depends on src.core, not vice-versa.
 from src.core.rag import answer_question
+from src.core.ingestion import process_uploaded_file
 from src.core.types import PromptStyle
 
 def create_app():
@@ -38,10 +39,21 @@ def create_app():
 
         if file:
             # --- ML LOGIC PLUG-IN ---
-            # TODO: 1. Save the file to a secure location (e.g., data/raw/)
-            # TODO: 2. Call a function from src.core.ingestion to process the file
-            #       (e.g., ingestion.process_uploaded_file(file_path))
-            print(f"File {file.filename} uploaded successfully.") # Placeholder
+            # 1. Save the file to a secure location
+            upload_folder = os.path.join(os.getcwd(), 'data', 'raw')
+            os.makedirs(upload_folder, exist_ok=True)
+            
+            file_path = os.path.join(upload_folder, file.filename)
+            file.save(file_path)
+            
+            # 2. Call ingestion to process the file
+            try:
+                process_uploaded_file(file_path)
+                print(f"File {file.filename} uploaded and ingested successfully.")
+            except Exception as e:
+                print(f"Error ingesting file: {e}")
+                # Optional: Flash message to user
+
         
         # Send the user back to the homepage
         return redirect(url_for('index'))

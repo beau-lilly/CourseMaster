@@ -40,6 +40,8 @@ Thumbs.db
 # Application data (Do not commit raw data or models)
 data/raw/*
 data/processed/*
+data/study_tool.db
+data/chroma_db/
 models/*
 
 # Exceptions for data/models (To keep the directories tracked, but ignore contents)
