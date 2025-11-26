@@ -2,6 +2,7 @@
 Vector storage and retrieval using Sentence Transformers + ChromaDB via LangChain.
 """
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
@@ -11,6 +12,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document as LCDocument
 
 from .types import Chunk
+
+# Suppress fork/parallelism warnings from tokenizers used by sentence-transformers.
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 @dataclass
 class VectorSearchResult:

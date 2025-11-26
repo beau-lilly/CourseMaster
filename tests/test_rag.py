@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, patch
+from langchain_community.llms import FakeListLLM
 from src.core.types import Chunk, PromptStyle, RAGResult
-from src.core.rag import format_docs, answer_question, PROMPT_TEMPLATES
+from src.core.rag import format_docs, answer_question, build_llm, PROMPT_TEMPLATES
 
 @pytest.fixture
 def sample_chunks():
@@ -52,12 +53,13 @@ def test_answer_question_styles(sample_chunks):
     mock_vector_store.search.return_value = []
     
     # Even with no chunks, it should handle the style (though it hits fallback)
-    result = answer_question(
-        question_text=query,
-        prompt_style=PromptStyle.EXPLANATORY,
-        vector_store=mock_vector_store,
-        db_manager=mock_db
-    )
+    with patch.dict("os.environ", {}, clear=True):
+        result = answer_question(
+            question_text=query,
+            prompt_style=PromptStyle.EXPLANATORY,
+            vector_store=mock_vector_store,
+            db_manager=mock_db
+        )
     assert result.question == query
     # Should hit fallback because mock returns no chunks
     assert "No context found" in result.answer
@@ -68,13 +70,37 @@ def test_answer_question_preselected_chunks(sample_chunks):
     mock_db = MagicMock()
     mock_db.get_chunks_by_ids.return_value = sample_chunks
     
-    result = answer_question(
-        question_text=query,
-        chunk_ids=["c1", "c2"],
-        db_manager=mock_db
-    )
+    with patch.dict("os.environ", {}, clear=True):
+        result = answer_question(
+            question_text=query,
+            chunk_ids=["c1", "c2"],
+            db_manager=mock_db
+        )
     
     # Should have used the chunks from get_chunks_by_ids
     assert len(result.used_chunks) == 2
     assert result.used_chunks[0].chunk_id == "c1"
     # Should not have called vector store (it's None by default)
+
+
+def test_build_llm_prefers_openrouter(monkeypatch):
+    """Ensure OpenRouter config is used when the key is present."""
+
+    class DummyLLM(FakeListLLM):
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+            super().__init__(responses=["ok"])
+
+    # Swap ChatOpenAI for a capturing stub and clear env to only include OpenRouter vars
+    monkeypatch.setattr("src.core.rag.ChatOpenAI", DummyLLM)
+    with patch.dict(
+        "os.environ",
+        {"OPENROUTER_API_KEY": "test-key", "OPENROUTER_MODEL": "openai/gpt-4o-mini"},
+        clear=True,
+    ):
+        llm, provider = build_llm("Hello?")
+
+    assert provider == "openrouter"
+    assert llm.kwargs["openai_api_key"] == "test-key"
+    assert llm.kwargs["base_url"] == "https://openrouter.ai/api/v1"
+    assert llm.kwargs["model"] == "openai/gpt-4o-mini"

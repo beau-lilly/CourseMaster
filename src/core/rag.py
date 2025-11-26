@@ -2,10 +2,10 @@
 RAG Orchestration using LangChain.
 """
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
+from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.llms import FakeListLLM
 try:
@@ -16,6 +16,9 @@ except ImportError:
 from src.core.types import Chunk, PromptStyle, RAGResult
 from src.core.vector_store import VectorStore
 from src.core.database import DatabaseManager
+
+# Load environment variables from .env if present so API keys are available.
+load_dotenv()
 
 # --- 1. Prompt Templates ---
 
@@ -74,6 +77,58 @@ def format_docs(chunks: List[Chunk]) -> str:
         f"[Chunk {c.chunk_index}] (Source: {c.doc_id}): {c.chunk_text}" 
         for c in chunks
     )
+
+def _openrouter_headers() -> Dict[str, str]:
+    """Optional headers OpenRouter recommends for attribution."""
+    headers: Dict[str, str] = {}
+    referer = os.environ.get("OPENROUTER_SITE_URL")
+    app_name = os.environ.get("OPENROUTER_APP_NAME")
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if app_name:
+        headers["X-Title"] = app_name
+    return headers
+
+
+def build_llm(question_text: str) -> Tuple[object, str]:
+    """
+    Selects the best available LLM:
+    1) OpenRouter if OPENROUTER_API_KEY is set.
+    2) Direct OpenAI if OPENAI_API_KEY is set.
+    3) A stubbed FakeListLLM for offline/testing.
+
+    Returns:
+        (llm_instance, provider_label)
+    """
+    # Prefer OpenRouter for real responses
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key and ChatOpenAI:
+        model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        headers = _openrouter_headers()
+        llm = ChatOpenAI(
+            model=model,
+            temperature=0,
+            openai_api_key=openrouter_key,
+            base_url=base_url,
+            default_headers=headers or None,
+        )
+        return llm, "openrouter"
+
+    # Fall back to vanilla OpenAI if configured
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key and ChatOpenAI:
+        model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        llm = ChatOpenAI(
+            model=model,
+            temperature=0,
+            openai_api_key=openai_key,
+        )
+        return llm, "openai"
+
+    # Otherwise stay offline with a deterministic stub
+    stub = FakeListLLM(responses=[f"[STUB RESPONSE] Processed prompt for query: {question_text}"])
+    return stub, "stub"
 
 # --- 3. Orchestration ---
 
@@ -141,31 +196,24 @@ def answer_question(
     # Select template
     prompt_template = PROMPT_TEMPLATES.get(prompt_style, PROMPT_TEMPLATES[PromptStyle.MINIMAL])
     
-    # Initialize LLM
-    llm = None
-    api_key = os.environ.get("OPENAI_API_KEY")
-    
-    if api_key and ChatOpenAI:
-        # Use real LLM if API key is present
-        llm = ChatOpenAI(
-            model="gpt-4o-mini",  # Or "gpt-3.5-turbo"
-            temperature=0,
-            openai_api_key=api_key
-        )
-    else:
-        # Use Stub LLM if no API key or explicitly requested
-        llm = FakeListLLM(responses=[f"[STUB RESPONSE] Processed prompt for query: {question_text}"])
+    # Initialize LLM (preferring OpenRouter)
+    llm, _provider = build_llm(question_text)
     
     # Define chain using LCEL
-    chain = (
-        prompt_template 
-        | llm 
-        | StrOutputParser()
-    )
+    chain = prompt_template | llm | StrOutputParser()
     
     # 5. Execute
     context_str = format_docs(chunks)
-    answer = chain.invoke({"context": context_str, "question": question_text})
+    try:
+        answer = chain.invoke({"context": context_str, "question": question_text})
+    except Exception as exc:
+        # Avoid crashing the app if the remote LLM errors (e.g., bad key/network)
+        print(f"LLM invocation failed ({exc}); falling back to stub.")
+        fallback = FakeListLLM(
+            responses=[f"[STUB RESPONSE] Unable to reach LLM ({exc}). Query: {question_text}"]
+        )
+        fallback_chain = prompt_template | fallback | StrOutputParser()
+        answer = fallback_chain.invoke({"context": context_str, "question": question_text})
     
     return RAGResult(
         question=question_text,
