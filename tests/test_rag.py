@@ -25,25 +25,21 @@ def test_answer_question_stub(sample_chunks):
     with patch.dict('os.environ', {}, clear=True):
         # Mock dependencies to avoid real DB/VectorStore calls
         mock_db = MagicMock()
-        mock_db.add_problem.return_value = MagicMock(problem_id="prob-1")
-        mock_db.get_document_ids_for_exam.return_value = ["doc1"]
-        # When searching, return sample_chunks
-        mock_vector_store = MagicMock()
-        mock_vector_store.search.return_value = [
-            MagicMock(chunk=c, similarity_score=0.9) for c in sample_chunks
-        ]
+        mock_db.get_problem.return_value = MagicMock(problem_id="prob-1", exam_id="exam-123", assignment_id=None, problem_number=None, problem_text="Some text")
+        mock_db.add_question.return_value = MagicMock(question_id="ques-1")
+        mock_db.get_chunks_for_problem.return_value = [(c, 0.9) for c in sample_chunks]
         
         result = answer_question(
             question_text=query,
-            exam_id="exam-123",
+            problem_id="prob-1",
             prompt_style=PromptStyle.MINIMAL,
-            vector_store=mock_vector_store,
             db_manager=mock_db
         )
         
         assert isinstance(result, RAGResult)
         assert result.question == query
         assert len(result.used_chunks) == 2
+        assert result.question_id == "ques-1"
         # The stub response defined in rag.py
         assert "[STUB RESPONSE]" in result.answer
         assert query in result.answer
@@ -52,43 +48,21 @@ def test_answer_question_styles(sample_chunks):
     """Test that the function accepts different styles without error."""
     query = "Explain Python"
     mock_db = MagicMock()
-    mock_vector_store = MagicMock()
-    mock_db.add_problem.return_value = MagicMock(problem_id="prob-1")
-    mock_db.get_document_ids_for_exam.return_value = []
-    mock_vector_store.search.return_value = []
+    mock_db.get_problem.return_value = MagicMock(problem_id="prob-1", exam_id="exam-123", assignment_id=None, problem_number=None, problem_text="Some text")
+    mock_db.add_question.return_value = MagicMock(question_id="ques-1")
+    mock_db.get_chunks_for_problem.return_value = []
     
     # Even with no chunks, it should handle the style (though it hits fallback)
     with patch.dict("os.environ", {}, clear=True):
         result = answer_question(
             question_text=query,
-            exam_id="exam-123",
+            problem_id="prob-1",
             prompt_style=PromptStyle.EXPLANATORY,
-            vector_store=mock_vector_store,
             db_manager=mock_db
         )
     assert result.question == query
-    # Should prompt the user to attach documents first
-    assert "No documents are linked to this exam yet" in result.answer
-
-def test_answer_question_preselected_chunks(sample_chunks):
-    """Test bypassing search by providing chunk_ids."""
-    query = "Specific context"
-    mock_db = MagicMock()
-    mock_db.get_chunks_by_ids.return_value = sample_chunks
-    mock_db.add_problem.return_value = MagicMock(problem_id="prob-1")
-    
-    with patch.dict("os.environ", {}, clear=True):
-        result = answer_question(
-            question_text=query,
-            exam_id="exam-123",
-            chunk_ids=["c1", "c2"],
-            db_manager=mock_db
-        )
-    
-    # Should have used the chunks from get_chunks_by_ids
-    assert len(result.used_chunks) == 2
-    assert result.used_chunks[0].chunk_id == "c1"
-    # Should not have called vector store (it's None by default)
+    # Should prompt the user to log retrievals first
+    assert "No context has been logged for this problem yet" in result.answer
 
 
 def test_build_llm_prefers_openrouter(monkeypatch):

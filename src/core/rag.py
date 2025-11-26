@@ -14,7 +14,6 @@ except ImportError:
     ChatOpenAI = None  # Fallback if library not present
 
 from src.core.types import Chunk, PromptStyle, RAGResult
-from src.core.vector_store import VectorStore
 from src.core.database import DatabaseManager
 
 # Load environment variables from .env if present so API keys are available.
@@ -134,73 +133,54 @@ def build_llm(question_text: str) -> Tuple[object, str]:
 
 def answer_question(
     question_text: str,
-    exam_id: str,
+    problem_id: str,
     prompt_style: PromptStyle = PromptStyle.MINIMAL,
-    k: int = 5,
-    chunk_ids: Optional[List[str]] = None,
-    vector_store: Optional[VectorStore] = None,
     db_manager: Optional[DatabaseManager] = None
 ) -> RAGResult:
     """
-    Orchestrates the RAG pipeline:
-    1. Logs the problem.
-    2. Retrieves chunks (via search or ID).
-    3. Logs retrieval.
-    4. Generates answer using LangChain.
+    Answer a question about a specific problem using precomputed retrievals.
+    1. Loads the problem and its logged chunks.
+    2. Creates a question row.
+    3. Generates an answer using LangChain.
+    4. Stores the answer.
     """
-    
-    # Init dependencies if not provided
-    if vector_store is None:
-        # Only initialize if we need to search
-        if not chunk_ids:
-            vector_store = VectorStore()
-            
+
     if db_manager is None:
         db_manager = DatabaseManager()
-        
-    # 1. Log Problem
-    problem = db_manager.add_problem(question_text, exam_id=exam_id)
-    
-    # 2. Retrieve Chunks
-    chunks: List[Chunk] = []
-    scores: List[float] = []
-    
-    if chunk_ids:
-        # Preselected path
-        chunks = db_manager.get_chunks_by_ids(chunk_ids)
-        # Assign dummy scores (1.0) for manual selection
-        scores = [1.0] * len(chunks)
-    else:
-        allowed_doc_ids = db_manager.get_document_ids_for_exam(exam_id)
-        if not allowed_doc_ids:
-            return RAGResult(
-                question=question_text,
-                answer="No documents are linked to this exam yet. Upload or attach documents first.",
-                used_chunks=[],
-                scores=[]
-            )
-        # Search path
-        if vector_store:
-            results = vector_store.search(question_text, k=k, allowed_doc_ids=allowed_doc_ids)
-            chunks = [r.chunk for r in results]
-            scores = [r.similarity_score for r in results]
-            
-            # Log retrieval
-            for r in results:
-                db_manager.log_retrieval(problem.problem_id, r.chunk.chunk_id, r.similarity_score)
-        else:
-            # Should not happen if logic above is correct, but safe fallback
-            chunks = []
-            
-    # 3. Fallback check
-    if not chunks:
+
+    problem = db_manager.get_problem(problem_id)
+    if not problem:
         return RAGResult(
             question=question_text,
-            answer="No context found for this query.",
+            answer="Problem not found.",
             used_chunks=[],
-            scores=[]
+            scores=[],
         )
-        
+
+    # Record the question first so we have an ID to attach the answer to.
+    stored_question = db_manager.add_question(
+        problem_id=problem_id,
+        question_text=question_text,
+        prompt_style=prompt_style.value,
+        answer_text="",
+    )
+
+    # 2. Retrieve precomputed chunks for the problem
+    chunk_pairs: List[tuple[Chunk, float]] = db_manager.get_chunks_for_problem(problem_id)
+    if not chunk_pairs:
+        message = "No context has been logged for this problem yet. Add documents and re-run problem ingestion."
+        db_manager.update_question_answer(stored_question.question_id, message)
+        return RAGResult(
+            question=question_text,
+            answer=message,
+            used_chunks=[],
+            scores=[],
+            question_id=stored_question.question_id,
+        )
+
+    chunks = [c for c, _ in chunk_pairs]
+    scores: List[float] = [score for _, score in chunk_pairs]
+
     # 4. Build Chain
     # Select template
     prompt_template = PROMPT_TEMPLATES.get(prompt_style, PROMPT_TEMPLATES[PromptStyle.MINIMAL])
@@ -223,12 +203,16 @@ def answer_question(
         )
         fallback_chain = prompt_template | fallback | StrOutputParser()
         answer = fallback_chain.invoke({"context": context_str, "question": question_text})
+
+    # Persist answer text for the question record
+    db_manager.update_question_answer(stored_question.question_id, answer)
     
     return RAGResult(
         question=question_text,
         answer=answer,
         used_chunks=chunks,
-        scores=scores
+        scores=scores,
+        question_id=stored_question.question_id,
     )
 
 # Backward compatibility/alias if needed, or can be removed

@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+    <a href="{{ url_for('view_problem', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}">&larr; Back to problem</a>
+
+    <h2>Question</h2>
+    <article>
+        <header><strong>Problem</strong></header>
+        <p>{{ problem.problem_text }}</p>
+        <p class="muted">
+            {{ assignment.name if assignment else "Unassigned" }}
+            {% if problem.problem_number is not none %}#{{ problem.problem_number }}{% endif %}
+        </p>
+    </article>
+
+    <article>
+        <header><strong>Asked</strong></header>
+        <p>{{ question.created_at if question else "Pending" }}</p>
+    </article>
+
+    <article>
+        <header><strong>Your Question</strong></header>
+        <p>{{ question_text }}</p>
+    </article>
+
+    <article>
+        <header><strong>Answer</strong></header>
+        <p>{{ explanation }}</p>
+    </article>
+
+    <hr>
+    
+    <h3>Relevant Chunks</h3>
+    <p>These are the precomputed chunks matched to this problem.</p>
+
+    {% for chunk in chunks %}
+        <details>
+            <summary>
+                Result {{ chunk.rank }} (chunk #{{ chunk.chunk_index }} from: {{ chunk.source }})
+                {% if chunk.similarity is not none %}- similarity: {{ "%.3f"|format(chunk.similarity) }}{% endif %}
+            </summary>
+            <p>{{ chunk.text }}</p>
+        </details>
+    {% else %}
+        <p>No relevant chunks were found for this problem.</p>
+    {% endfor %}
+
+{% endblock %}

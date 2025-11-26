@@ -11,6 +11,15 @@ import numpy as np
 
 
 @dataclass
+class Assignment:
+    """Represents an assignment label within an exam (e.g., Homework 1)."""
+    assignment_id: str
+    exam_id: str
+    name: str
+    created_at: datetime
+
+
+@dataclass
 class Course:
     """Represents a course (top-level scope)."""
     course_id: str
@@ -58,7 +67,20 @@ class Problem:
     exam_id: str
     problem_text: str
     uploaded_at: datetime
+    assignment_id: str | None = None
+    problem_number: int | None = None
     embedding: np.ndarray | None = None
+
+
+@dataclass
+class Question:
+    """Represents a single question asked about a problem."""
+    question_id: str
+    problem_id: str
+    question_text: str
+    answer_text: str
+    created_at: datetime
+    prompt_style: str | None = None
 
 @dataclass
 class RAGResult:
@@ -67,3 +89,4 @@ class RAGResult:
     answer: str
     used_chunks: List[Chunk]
     scores: Optional[List[float]] = None
+    question_id: str | None = None

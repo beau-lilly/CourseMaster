@@ -49,34 +49,46 @@
     </section>
 
     <section>
-        <h3>Ask a question</h3>
-        <form action="{{ url_for('ask_question', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST">
-            <label for="question_text">Your question</label>
-            <textarea id="question_text" name="question_text" rows="4" required></textarea>
-
-            <label for="style">Answer style</label>
-            <select id="style" name="style">
-                <option value="minimal">Minimal</option>
-                <option value="explanatory">Explanatory</option>
-                <option value="tutoring">Tutoring</option>
-                <option value="similarity">Similarity</option>
-            </select>
-
-            <button type="submit">Get answer</button>
-        </form>
-    </section>
-
-    <section>
-        <h3>Questions asked for this exam</h3>
+        <h3>Problems</h3>
         {% if problems %}
             <ul>
                 {% for problem in problems %}
-                    <li>{{ problem.problem_text }}</li>
+                    {% set assignment = assignment_lookup.get(problem.assignment_id) %}
+                    <li>
+                        <a href="{{ url_for('view_problem', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}">
+                            {{ assignment.name if assignment else "Unassigned" }}
+                            {% if problem.problem_number is not none %} #{{ problem.problem_number }}{% endif %}
+                        </a>
+                    </li>
                 {% endfor %}
             </ul>
         {% else %}
-            <p>No questions have been asked yet.</p>
+            <p>No problems have been added yet.</p>
         {% endif %}
+    </section>
+
+    <section>
+        <h4>Add a problem</h4>
+        <form action="{{ url_for('create_problem', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST">
+            <label for="assignment_id">Select existing assignment</label>
+            <select id="assignment_id" name="assignment_id">
+                <option value="">-- New assignment --</option>
+                {% for assignment in assignments %}
+                    <option value="{{ assignment.assignment_id }}">{{ assignment.name }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="new_assignment_name">Or create a new assignment</label>
+            <input type="text" id="new_assignment_name" name="new_assignment_name" placeholder="e.g., Homework 1">
+
+            <label for="problem_number">Problem number (optional)</label>
+            <input type="number" id="problem_number" name="problem_number" min="1" step="1">
+
+            <label for="problem_text">Problem text</label>
+            <textarea id="problem_text" name="problem_text" rows="4" required></textarea>
+
+            <button type="submit">Create problem</button>
+        </form>
     </section>
 
 {% endblock %}

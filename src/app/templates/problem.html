@@ -1,0 +1,88 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+    <a href="{{ url_for('view_exam', course_id=course.course_id, exam_id=exam.exam_id) }}">&larr; Back to {{ exam.name }}</a>
+
+    <h2>
+        {{ assignment.name if assignment else "Problem" }}
+        {% if problem.problem_number is not none %}#{{ problem.problem_number }}{% endif %}
+    </h2>
+    <p class="muted">Entered on {{ problem.uploaded_at }}</p>
+
+    <article>
+        <header><strong>Problem text</strong></header>
+        <p>{{ problem.problem_text }}</p>
+        {% if not assignment %}
+            <p class="muted">No assignment name was provided for this problem.</p>
+        {% endif %}
+    </article>
+
+    <section>
+        <h3>Precomputed matches</h3>
+        {% if chunks %}
+            {% for chunk in chunks %}
+                <details>
+                    <summary>
+                        Result {{ chunk.rank }} (chunk #{{ chunk.chunk_index }} from: {{ chunk.source }})
+                        {% if chunk.similarity is not none %}- similarity: {{ "%.3f"|format(chunk.similarity) }}{% endif %}
+                    </summary>
+                    <p>{{ chunk.text }}</p>
+                </details>
+            {% endfor %}
+        {% else %}
+            <p>No chunk matches have been logged for this problem yet.</p>
+        {% endif %}
+    </section>
+
+    <section>
+        <h3>Ask a question about this problem</h3>
+        <form action="{{ url_for('ask_question', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}" method="POST">
+            <label for="question_text">Your question</label>
+            <textarea id="question_text" name="question_text" rows="4" required></textarea>
+
+            <label for="style">Answer style</label>
+            <select id="style" name="style">
+                <option value="minimal">Minimal</option>
+                <option value="explanatory">Explanatory</option>
+                <option value="tutoring">Tutoring</option>
+                <option value="similarity">Similarity</option>
+            </select>
+
+            <button type="submit">Get answer</button>
+        </form>
+    </section>
+
+    <section>
+        <h3>Questions asked for this problem</h3>
+        {% if questions %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Question</th>
+                        <th>Assignment</th>
+                        <th>Number</th>
+                        <th>Asked</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for q in questions %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('view_question', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id, question_id=q.question_id) }}">
+                                    {{ q.question_text }}
+                                </a>
+                            </td>
+                            <td>{{ assignment.name if assignment else "Unassigned" }}</td>
+                            <td>{% if problem.problem_number is not none %}{{ problem.problem_number }}{% else %}&mdash;{% endif %}</td>
+                            <td>{{ q.created_at }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No questions have been asked yet.</p>
+        {% endif %}
+    </section>
+
+{% endblock %}

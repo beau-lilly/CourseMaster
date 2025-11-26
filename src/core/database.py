@@ -9,7 +9,7 @@ from typing import List, Optional, Sequence
 
 # Import our defined types and config
 from .config import DB_PATH
-from .types import Course, Exam, Document, Chunk, Problem
+from .types import Assignment, Course, Exam, Document, Chunk, Problem, Question
 
 DEFAULT_COURSE_ID = "course_default"
 DEFAULT_EXAM_ID = "exam_default"
@@ -89,6 +89,56 @@ class DatabaseManager:
             created_at=created_dt,
         )
 
+    @staticmethod
+    def _row_to_assignment(row: sqlite3.Row) -> Assignment:
+        created_value = row["created_at"]
+        created_dt = (
+            datetime.fromisoformat(created_value)
+            if isinstance(created_value, str)
+            else created_value
+        )
+        return Assignment(
+            assignment_id=row["assignment_id"],
+            exam_id=row["exam_id"],
+            name=row["name"],
+            created_at=created_dt,
+        )
+
+    @staticmethod
+    def _row_to_problem(row: sqlite3.Row) -> Problem:
+        uploaded_value = row["uploaded_at"]
+        uploaded_dt = (
+            datetime.fromisoformat(uploaded_value)
+            if isinstance(uploaded_value, str)
+            else uploaded_value
+        )
+        return Problem(
+            problem_id=row["problem_id"],
+            exam_id=row["exam_id"],
+            problem_text=row["problem_text"],
+            uploaded_at=uploaded_dt,
+            assignment_id=row["assignment_id"],
+            problem_number=row["problem_number"],
+            embedding=None,
+        )
+
+    @staticmethod
+    def _row_to_question(row: sqlite3.Row) -> Question:
+        created_value = row["created_at"]
+        created_dt = (
+            datetime.fromisoformat(created_value)
+            if isinstance(created_value, str)
+            else created_value
+        )
+        return Question(
+            question_id=row["question_id"],
+            problem_id=row["problem_id"],
+            question_text=row["question_text"],
+            answer_text=row["answer_text"],
+            created_at=created_dt,
+            prompt_style=row["prompt_style"],
+        )
+
     def _create_tables(self):
         """Creates all necessary tables if they don't already exist."""
         sql_commands = [
@@ -110,6 +160,16 @@ class DatabaseManager:
             );
             """,
             """
+            CREATE TABLE IF NOT EXISTS assignments (
+                assignment_id TEXT PRIMARY KEY,
+                exam_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                FOREIGN KEY (exam_id) REFERENCES exams (exam_id),
+                UNIQUE(exam_id, name)
+            );
+            """,
+            """
             CREATE TABLE IF NOT EXISTS documents (
                 doc_id TEXT PRIMARY KEY,
                 course_id TEXT NOT NULL,
@@ -124,8 +184,11 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS problems (
                 problem_id TEXT PRIMARY KEY,
                 exam_id TEXT NOT NULL,
+                assignment_id TEXT,
+                problem_number INTEGER,
                 problem_text TEXT NOT NULL,
                 uploaded_at TIMESTAMP NOT NULL,
+                FOREIGN KEY (assignment_id) REFERENCES assignments (assignment_id),
                 FOREIGN KEY (exam_id) REFERENCES exams (exam_id)
             );
             """,
@@ -145,6 +208,17 @@ class DatabaseManager:
                 PRIMARY KEY (exam_id, doc_id),
                 FOREIGN KEY (exam_id) REFERENCES exams (exam_id),
                 FOREIGN KEY (doc_id) REFERENCES documents (doc_id)
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS questions (
+                question_id TEXT PRIMARY KEY,
+                problem_id TEXT NOT NULL,
+                question_text TEXT NOT NULL,
+                answer_text TEXT NOT NULL,
+                prompt_style TEXT,
+                created_at TIMESTAMP NOT NULL,
+                FOREIGN KEY (problem_id) REFERENCES problems (problem_id)
             );
             """,
             """
@@ -174,6 +248,8 @@ class DatabaseManager:
             self._ensure_column(conn, "documents", "content_hash", "TEXT")
             self._ensure_column(conn, "documents", "course_id", "TEXT")
             self._ensure_column(conn, "problems", "exam_id", "TEXT")
+            self._ensure_column(conn, "problems", "assignment_id", "TEXT")
+            self._ensure_column(conn, "problems", "problem_number", "INTEGER")
 
             self._populate_missing_document_hashes(conn)
             self._ensure_default_course_and_exam(conn)
@@ -185,6 +261,19 @@ class DatabaseManager:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_documents_course_hash ON documents(course_id, content_hash)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_problems_assignment ON problems(assignment_id)"
+            )
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_problems_assignment_number
+                ON problems(assignment_id, problem_number)
+                WHERE assignment_id IS NOT NULL AND problem_number IS NOT NULL
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_questions_problem ON questions(problem_id)"
             )
             conn.commit()
 
@@ -319,6 +408,46 @@ class DatabaseManager:
         with self._get_connection() as conn:
             rows = conn.execute(sql, (course_id,)).fetchall()
             return [self._row_to_exam(row) for row in rows]
+
+    # --- Assignments ---
+
+    def add_assignment(self, exam_id: str, name: str) -> Assignment:
+        """Create or return an assignment for an exam."""
+        existing = self.get_assignment_by_name(exam_id, name)
+        if existing:
+            return existing
+
+        assignment = Assignment(
+            assignment_id=f"assign_{uuid.uuid4()}",
+            exam_id=exam_id,
+            name=name,
+            created_at=datetime.now(),
+        )
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO assignments (assignment_id, exam_id, name, created_at) VALUES (?, ?, ?, ?)",
+                (assignment.assignment_id, assignment.exam_id, assignment.name, assignment.created_at.isoformat()),
+            )
+            conn.commit()
+        return assignment
+
+    def get_assignment(self, assignment_id: str) -> Optional[Assignment]:
+        sql = "SELECT * FROM assignments WHERE assignment_id = ?"
+        with self._get_connection() as conn:
+            row = conn.execute(sql, (assignment_id,)).fetchone()
+            return self._row_to_assignment(row) if row else None
+
+    def get_assignment_by_name(self, exam_id: str, name: str) -> Optional[Assignment]:
+        sql = "SELECT * FROM assignments WHERE exam_id = ? AND name = ?"
+        with self._get_connection() as conn:
+            row = conn.execute(sql, (exam_id, name)).fetchone()
+            return self._row_to_assignment(row) if row else None
+
+    def list_assignments_for_exam(self, exam_id: str) -> List[Assignment]:
+        sql = "SELECT * FROM assignments WHERE exam_id = ? ORDER BY created_at DESC"
+        with self._get_connection() as conn:
+            rows = conn.execute(sql, (exam_id,)).fetchall()
+            return [self._row_to_assignment(row) for row in rows]
 
     # --- Documents ---
 
@@ -522,22 +651,42 @@ class DatabaseManager:
 
     # --- Problems & retrieval ---
 
-    def add_problem(self, text: str, exam_id: str) -> Problem:
+    def add_problem(
+        self,
+        text: str,
+        exam_id: str,
+        assignment_id: Optional[str] = None,
+        problem_number: Optional[int] = None,
+    ) -> Problem:
         """Adds a new problem to the database, scoped to an exam."""
         if not exam_id:
             raise ValueError("exam_id is required to add a problem.")
+
+        if assignment_id and problem_number is not None:
+            with self._get_connection() as conn:
+                clash = conn.execute(
+                    """
+                    SELECT problem_id FROM problems
+                    WHERE assignment_id = ? AND problem_number = ?
+                    """,
+                    (assignment_id, problem_number),
+                ).fetchone()
+                if clash:
+                    raise ValueError("This assignment already has a problem with that number.")
 
         problem = Problem(
             problem_id=f"prob_{uuid.uuid4()}",
             exam_id=exam_id,
             problem_text=text,
             uploaded_at=datetime.now(),
+            assignment_id=assignment_id,
+            problem_number=problem_number,
             embedding=None,
         )
 
         sql = """
-        INSERT INTO problems (problem_id, exam_id, problem_text, uploaded_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO problems (problem_id, exam_id, assignment_id, problem_number, problem_text, uploaded_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """
         with self._get_connection() as conn:
             conn.execute(
@@ -545,6 +694,8 @@ class DatabaseManager:
                 (
                     problem.problem_id,
                     problem.exam_id,
+                    problem.assignment_id,
+                    problem.problem_number,
                     problem.problem_text,
                     problem.uploaded_at.isoformat(),
                 ),
@@ -552,29 +703,17 @@ class DatabaseManager:
             conn.commit()
         return problem
 
+    def get_problem(self, problem_id: str) -> Optional[Problem]:
+        sql = "SELECT * FROM problems WHERE problem_id = ?"
+        with self._get_connection() as conn:
+            row = conn.execute(sql, (problem_id,)).fetchone()
+            return self._row_to_problem(row) if row else None
+
     def list_problems_for_exam(self, exam_id: str) -> List[Problem]:
         sql = "SELECT * FROM problems WHERE exam_id = ? ORDER BY uploaded_at DESC"
         with self._get_connection() as conn:
             rows = conn.execute(sql, (exam_id,)).fetchall()
-
-        problems = []
-        for row in rows:
-            uploaded_value = row["uploaded_at"]
-            uploaded_dt = (
-                datetime.fromisoformat(uploaded_value)
-                if isinstance(uploaded_value, str)
-                else uploaded_value
-            )
-            problems.append(
-                Problem(
-                    problem_id=row["problem_id"],
-                    exam_id=row["exam_id"],
-                    problem_text=row["problem_text"],
-                    uploaded_at=uploaded_dt,
-                    embedding=None,
-                )
-            )
-        return problems
+        return [self._row_to_problem(row) for row in rows]
 
     def log_retrieval(self, problem_id: str, chunk_id: str, score: float):
         """Logs a retrieval event."""
@@ -585,3 +724,90 @@ class DatabaseManager:
         with self._get_connection() as conn:
             conn.execute(sql, (problem_id, chunk_id, score, datetime.now().isoformat()))
             conn.commit()
+
+    def get_retrievals_for_problem(self, problem_id: str) -> list[dict]:
+        """Returns retrieval rows for a problem ordered by similarity desc."""
+        sql = """
+        SELECT retrieved_chunk_id, similarity_score
+        FROM retrieval_log
+        WHERE problem_id = ?
+        ORDER BY similarity_score DESC
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(sql, (problem_id,)).fetchall()
+        return [
+            {"chunk_id": row["retrieved_chunk_id"], "similarity": row["similarity_score"]}
+            for row in rows
+        ]
+
+    def get_chunks_for_problem(self, problem_id: str) -> List[tuple[Chunk, float]]:
+        """Return chunks associated with a problem along with similarity scores."""
+        retrievals = self.get_retrievals_for_problem(problem_id)
+        if not retrievals:
+            return []
+        chunk_ids = [r["chunk_id"] for r in retrievals]
+        chunks = self.get_chunks_by_ids(chunk_ids)
+        chunk_map = {c.chunk_id: c for c in chunks}
+
+        ordered: List[tuple[Chunk, float]] = []
+        for r in retrievals:
+            chunk = chunk_map.get(r["chunk_id"])
+            if chunk:
+                ordered.append((chunk, r["similarity"]))
+        return ordered
+
+    # --- Questions ---
+
+    def add_question(
+        self,
+        problem_id: str,
+        question_text: str,
+        prompt_style: str | None = None,
+        answer_text: str = "",
+    ) -> Question:
+        """Create a question record for a problem."""
+        question = Question(
+            question_id=f"ques_{uuid.uuid4()}",
+            problem_id=problem_id,
+            question_text=question_text,
+            answer_text=answer_text,
+            created_at=datetime.now(),
+            prompt_style=prompt_style,
+        )
+        sql = """
+        INSERT INTO questions (question_id, problem_id, question_text, answer_text, prompt_style, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                sql,
+                (
+                    question.question_id,
+                    question.problem_id,
+                    question.question_text,
+                    question.answer_text,
+                    question.prompt_style,
+                    question.created_at.isoformat(),
+                ),
+            )
+            conn.commit()
+        return question
+
+    def update_question_answer(self, question_id: str, answer_text: str):
+        """Persist the generated answer for a question."""
+        sql = "UPDATE questions SET answer_text = ? WHERE question_id = ?"
+        with self._get_connection() as conn:
+            conn.execute(sql, (answer_text, question_id))
+            conn.commit()
+
+    def get_question(self, question_id: str) -> Optional[Question]:
+        sql = "SELECT * FROM questions WHERE question_id = ?"
+        with self._get_connection() as conn:
+            row = conn.execute(sql, (question_id,)).fetchone()
+            return self._row_to_question(row) if row else None
+
+    def list_questions_for_problem(self, problem_id: str) -> List[Question]:
+        sql = "SELECT * FROM questions WHERE problem_id = ? ORDER BY created_at DESC"
+        with self._get_connection() as conn:
+            rows = conn.execute(sql, (problem_id,)).fetchall()
+            return [self._row_to_question(row) for row in rows]

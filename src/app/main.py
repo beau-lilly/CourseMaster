@@ -10,6 +10,7 @@ from src.core.rag import answer_question
 from src.core.ingestion import process_uploaded_file
 from src.core.types import PromptStyle
 from src.core.database import DatabaseManager
+from src.core.retrieval import index_problem_context
 
 
 UPLOAD_ROOT = os.path.join(os.getcwd(), "data", "raw")
@@ -98,6 +99,8 @@ def create_app():
         attached_ids = {doc.doc_id for doc in exam_docs}
         attachable_docs = [doc for doc in course_docs if doc.doc_id not in attached_ids]
         problems = db_manager.list_problems_for_exam(exam_id)
+        assignments = db_manager.list_assignments_for_exam(exam_id)
+        assignment_lookup = {a.assignment_id: a for a in assignments}
         return render_template(
             'exam.html',
             course=course,
@@ -105,6 +108,8 @@ def create_app():
             exam_documents=exam_docs,
             attachable_docs=attachable_docs,
             problems=problems,
+            assignments=assignments,
+            assignment_lookup=assignment_lookup,
         )
 
     @app.route('/courses/<course_id>/exams/<exam_id>/documents', methods=['POST'])
@@ -129,37 +134,11 @@ def create_app():
             db_manager.attach_documents_to_exam(exam_id, doc_ids)
         return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
 
-    @app.route('/courses/<course_id>/exams/<exam_id>/ask', methods=['POST'])
-    def ask_question(course_id: str, exam_id: str):
-        """Handles the question form submission scoped to an exam."""
-        
-        # Get the question from the form
-        question_text = request.form['question_text']
-        
-        # Get the selected style (default to 'minimal')
-        style_str = request.form.get('style', 'minimal').upper()
-        try:
-            selected_style = PromptStyle[style_str]
-        except KeyError:
-            selected_style = PromptStyle.MINIMAL
-        
-        # --- RAG LOGIC ---
-        result = answer_question(
-            question_text=question_text,
-            exam_id=exam_id,
-            prompt_style=selected_style,
-            db_manager=db_manager
-        )
-        
-        # Get filenames
-        doc_ids = [c.doc_id for c in result.used_chunks]
+    def _prepare_display_chunks(chunk_pairs):
+        doc_ids = [c.doc_id for c, _ in chunk_pairs]
         filenames = db_manager.get_doc_filenames(list(set(doc_ids)))
-
-        # Prepare chunks for display with rank and similarity score
         display_chunks = []
-        scores = result.scores or []
-        for rank, chunk in enumerate(result.used_chunks, start=1):
-            score = scores[rank - 1] if rank - 1 < len(scores) else None
+        for rank, (chunk, score) in enumerate(chunk_pairs, start=1):
             display_chunks.append({
                 "rank": rank,
                 "text": chunk.chunk_text,
@@ -167,15 +146,157 @@ def create_app():
                 "chunk_index": chunk.chunk_index,
                 "similarity": score
             })
+        return display_chunks
 
-        # Render the answer.html page, passing in the data
-        return render_template(
-            'answer.html',
-            question=result.question,
-            explanation=result.answer, 
-            chunks=display_chunks,
-            course_id=course_id,
+    @app.route('/courses/<course_id>/exams/<exam_id>/problems', methods=['POST'])
+    def create_problem(course_id: str, exam_id: str):
+        """Create a problem under an exam and precompute retrievals."""
+        course = db_manager.get_course(course_id)
+        exam = db_manager.get_exam(exam_id)
+        if not course or not exam:
+            return redirect(url_for('index'))
+
+        problem_text = request.form.get('problem_text', '').strip()
+        if not problem_text:
+            return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
+
+        new_assignment_name = request.form.get('new_assignment_name', '').strip()
+        selected_assignment_id = request.form.get('assignment_id')
+        assignment = None
+        if new_assignment_name:
+            assignment = db_manager.add_assignment(exam_id=exam_id, name=new_assignment_name)
+        elif selected_assignment_id:
+            assignment = db_manager.get_assignment(selected_assignment_id)
+
+        if not assignment:
+            return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
+
+        number_raw = request.form.get('problem_number', '').strip()
+        problem_number = int(number_raw) if number_raw else None
+
+        try:
+            problem = db_manager.add_problem(
+                text=problem_text,
+                exam_id=exam_id,
+                assignment_id=assignment.assignment_id if assignment else None,
+                problem_number=problem_number,
+            )
+        except ValueError:
+            # Duplicate constraint violated; send back to exam page.
+            return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
+
+        # Precompute retrievals for this problem.
+        index_problem_context(
+            problem_text=problem_text,
             exam_id=exam_id,
+            problem_id=problem.problem_id,
+            db_manager=db_manager,
+        )
+
+        return redirect(
+            url_for('view_problem', course_id=course_id, exam_id=exam_id, problem_id=problem.problem_id)
+        )
+
+    @app.route('/courses/<course_id>/exams/<exam_id>/problems/<problem_id>')
+    def view_problem(course_id: str, exam_id: str, problem_id: str):
+        course = db_manager.get_course(course_id)
+        exam = db_manager.get_exam(exam_id)
+        problem = db_manager.get_problem(problem_id)
+        if not course or not exam or not problem:
+            return redirect(url_for('index'))
+
+        assignment = db_manager.get_assignment(problem.assignment_id) if problem.assignment_id else None
+        chunk_pairs = db_manager.get_chunks_for_problem(problem.problem_id)
+        display_chunks = _prepare_display_chunks(chunk_pairs)
+        questions = db_manager.list_questions_for_problem(problem.problem_id)
+
+        return render_template(
+            'problem.html',
+            course=course,
+            exam=exam,
+            problem=problem,
+            assignment=assignment,
+            chunks=display_chunks,
+            questions=questions,
+        )
+
+    @app.route('/courses/<course_id>/exams/<exam_id>/problems/<problem_id>/questions', methods=['POST'])
+    def ask_question(course_id: str, exam_id: str, problem_id: str):
+        """Handles the question form submission scoped to a problem."""
+        course = db_manager.get_course(course_id)
+        exam = db_manager.get_exam(exam_id)
+        problem = db_manager.get_problem(problem_id)
+        if not course or not exam or not problem:
+            return redirect(url_for('index'))
+
+        question_text = request.form.get('question_text', '').strip()
+        if not question_text:
+            return redirect(url_for('view_problem', course_id=course_id, exam_id=exam_id, problem_id=problem_id))
+
+        style_str = request.form.get('style', 'minimal').upper()
+        try:
+            selected_style = PromptStyle[style_str]
+        except KeyError:
+            selected_style = PromptStyle.MINIMAL
+
+        result = answer_question(
+            question_text=question_text,
+            problem_id=problem_id,
+            prompt_style=selected_style,
+            db_manager=db_manager
+        )
+
+        if result.question_id:
+            return redirect(
+                url_for(
+                    'view_question',
+                    course_id=course_id,
+                    exam_id=exam_id,
+                    problem_id=problem_id,
+                    question_id=result.question_id,
+                )
+            )
+
+        # Fallback: render inline if question could not be stored
+        fallback_pairs = []
+        for idx, chunk in enumerate(result.used_chunks):
+            score = result.scores[idx] if result.scores and idx < len(result.scores) else None
+            fallback_pairs.append((chunk, score))
+        return render_template(
+            'question.html',
+            course=course,
+            exam=exam,
+            problem=problem,
+            question_text=question_text,
+            explanation=result.answer,
+            chunks=_prepare_display_chunks(fallback_pairs),
+            question=None,
+            assignment=db_manager.get_assignment(problem.assignment_id) if problem.assignment_id else None,
+        )
+
+    @app.route('/courses/<course_id>/exams/<exam_id>/problems/<problem_id>/questions/<question_id>')
+    def view_question(course_id: str, exam_id: str, problem_id: str, question_id: str):
+        course = db_manager.get_course(course_id)
+        exam = db_manager.get_exam(exam_id)
+        problem = db_manager.get_problem(problem_id)
+        question = db_manager.get_question(question_id)
+        if not course or not exam or not problem or not question:
+            return redirect(url_for('index'))
+
+        assignment = db_manager.get_assignment(problem.assignment_id) if problem.assignment_id else None
+        chunk_pairs = db_manager.get_chunks_for_problem(problem.problem_id)
+        display_chunks = _prepare_display_chunks(chunk_pairs)
+
+        return render_template(
+            'question.html',
+            course=course,
+            exam=exam,
+            problem=problem,
+            question=question,
+            question_text=question.question_text,
+            explanation=question.answer_text,
+            chunks=display_chunks,
+            assignment=assignment,
         )
 
     return app

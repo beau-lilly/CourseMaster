@@ -1,6 +1,7 @@
 # tests/test_database.py
 
 import uuid
+import pytest
 
 from tests.helpers import HashEmbeddings
 from src.core.database import DatabaseManager
@@ -78,7 +79,8 @@ def test_database_metadata_and_vector_store_round_trip(tmp_path):
     store.reset()
 
     doc = db.add_document("test_doc.pdf", "Full document text.", course_id=course.course_id)
-    problem = db.add_problem("Test problem text.", exam_id=exam.exam_id)
+    assignment = db.add_assignment(exam.exam_id, "Homework 1")
+    problem = db.add_problem("Test problem text.", exam_id=exam.exam_id, assignment_id=assignment.assignment_id, problem_number=1)
 
     chunk = Chunk(
         chunk_id=f"chunk_{uuid.uuid4()}",
@@ -124,3 +126,39 @@ def test_database_metadata_and_vector_store_round_trip(tmp_path):
     chroma_sidecar = db_path.with_name(f"{db_path.stem}_chroma_db")
     assert not chroma_sidecar.exists()
     assert vector_dir.exists()
+
+
+def test_problem_number_must_be_unique_per_assignment(tmp_path):
+    db_path = tmp_path / "assignment_num.db"
+    db = DatabaseManager(db_path=str(db_path))
+    course = db.add_course("Course A")
+    exam = db.add_exam(course.course_id, "Midterm")
+    assignment = db.add_assignment(exam.exam_id, "Practice 1")
+
+    db.add_problem("First problem", exam_id=exam.exam_id, assignment_id=assignment.assignment_id, problem_number=1)
+
+    # Duplicate number in same assignment should raise
+    with pytest.raises(ValueError):
+        db.add_problem("Duplicate number", exam_id=exam.exam_id, assignment_id=assignment.assignment_id, problem_number=1)
+
+    # Null numbers can repeat
+    db.add_problem("No number", exam_id=exam.exam_id, assignment_id=assignment.assignment_id)
+    db.add_problem("Another null", exam_id=exam.exam_id, assignment_id=assignment.assignment_id)
+
+
+def test_questions_round_trip(tmp_path):
+    db_path = tmp_path / "questions.db"
+    db = DatabaseManager(db_path=str(db_path))
+    course = db.add_course("Course A")
+    exam = db.add_exam(course.course_id, "Final")
+    assignment = db.add_assignment(exam.exam_id, "Practice Final")
+    problem = db.add_problem("What is photosynthesis?", exam_id=exam.exam_id, assignment_id=assignment.assignment_id)
+
+    question = db.add_question(problem.problem_id, "Explain it", prompt_style="minimal")
+    db.update_question_answer(question.question_id, "It converts light to energy.")
+
+    stored = db.get_question(question.question_id)
+    assert stored is not None
+    assert stored.answer_text == "It converts light to energy."
+    questions = db.list_questions_for_problem(problem.problem_id)
+    assert len(questions) == 1
