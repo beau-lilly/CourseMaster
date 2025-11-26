@@ -5,7 +5,14 @@ Core dataclasses/types (e.g., Document, Chunk, RAGResult).
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 import numpy as np
+
+class PromptStyle(Enum):
+    MINIMAL = "minimal"
+    EXPLANATORY = "explanatory"
+    TUTORING = "tutoring"
+    SIMILARITY = "similarity"
 
 @dataclass
 class Document:
@@ -22,7 +29,7 @@ class Chunk:
     doc_id: str
     chunk_text: str
     chunk_index: int # The sequential order of the chunk (e.g., 0, 1, 2...)
-    embedding: np.ndarray | None = None # Will be populated later
+    embedding: np.ndarray | None = None
 
 @dataclass
 class Problem:
@@ -30,4 +37,4 @@ class Problem:
     problem_id: str
     problem_text: str
     uploaded_at: datetime
-    embedding: np.ndarray | None = None # Will be populated later
+    embedding: np.ndarray | None = None
