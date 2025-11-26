@@ -7,3 +7,12 @@ details {
     border: 1px solid #ddd;
     margin-bottom: 1rem;
 }
+
+section {
+    margin-bottom: 2rem;
+}
+
+.muted {
+    color: #777;
+    font-size: 0.95rem;
+}

@@ -2,6 +2,12 @@
 
 {% block content %}
 
+    {% if exam_id and course_id %}
+        <a href="{{ url_for('view_exam', course_id=course_id, exam_id=exam_id) }}">&larr; Back to exam</a>
+    {% else %}
+        <a href="{{ url_for('index') }}">&larr; Back home</a>
+    {% endif %}
+
     <h2>Result</h2>
 
     <article>
@@ -32,6 +38,10 @@
     {% endfor %}
 
     <br>
-    <a href="{{ url_for('index') }}" role="button">Ask Another Question</a>
+    {% if exam_id and course_id %}
+        <a href="{{ url_for('view_exam', course_id=course_id, exam_id=exam_id) }}" role="button">Ask another question</a>
+    {% else %}
+        <a href="{{ url_for('index') }}" role="button">Back home</a>
+    {% endif %}
 
 {% endblock %}

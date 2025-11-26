@@ -1,0 +1,52 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+    <a href="{{ url_for('index') }}">&larr; All courses</a>
+    <h2>{{ course.name }}</h2>
+
+    <section>
+        <h3>Exams</h3>
+        {% if exams %}
+            <ul>
+                {% for exam in exams %}
+                    <li>
+                        <a href="{{ url_for('view_exam', course_id=course.course_id, exam_id=exam.exam_id) }}">
+                            {{ exam.name }}
+                        </a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No exams yet. Create one below.</p>
+        {% endif %}
+
+        <form action="{{ url_for('create_exam', course_id=course.course_id) }}" method="POST">
+            <label for="exam_name">Create new exam</label>
+            <input type="text" id="exam_name" name="exam_name" placeholder="e.g., Midterm 1" required>
+            <button type="submit">Add exam</button>
+        </form>
+    </section>
+
+    <section>
+        <h3>Course documents</h3>
+        {% if documents %}
+            <ul>
+                {% for doc in documents %}
+                    <li>{{ doc.original_filename }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No documents uploaded for this course yet.</p>
+        {% endif %}
+
+        <form action="{{ url_for('upload_course_document', course_id=course.course_id) }}" method="POST" enctype="multipart/form-data">
+            <label for="document">
+                Upload document to course
+                <input type="file" id="document" name="document" required>
+            </label>
+            <button type="submit">Upload</button>
+        </form>
+    </section>
+
+{% endblock %}

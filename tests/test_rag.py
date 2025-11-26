@@ -25,6 +25,8 @@ def test_answer_question_stub(sample_chunks):
     with patch.dict('os.environ', {}, clear=True):
         # Mock dependencies to avoid real DB/VectorStore calls
         mock_db = MagicMock()
+        mock_db.add_problem.return_value = MagicMock(problem_id="prob-1")
+        mock_db.get_document_ids_for_exam.return_value = ["doc1"]
         # When searching, return sample_chunks
         mock_vector_store = MagicMock()
         mock_vector_store.search.return_value = [
@@ -33,6 +35,7 @@ def test_answer_question_stub(sample_chunks):
         
         result = answer_question(
             question_text=query,
+            exam_id="exam-123",
             prompt_style=PromptStyle.MINIMAL,
             vector_store=mock_vector_store,
             db_manager=mock_db
@@ -50,29 +53,34 @@ def test_answer_question_styles(sample_chunks):
     query = "Explain Python"
     mock_db = MagicMock()
     mock_vector_store = MagicMock()
+    mock_db.add_problem.return_value = MagicMock(problem_id="prob-1")
+    mock_db.get_document_ids_for_exam.return_value = []
     mock_vector_store.search.return_value = []
     
     # Even with no chunks, it should handle the style (though it hits fallback)
     with patch.dict("os.environ", {}, clear=True):
         result = answer_question(
             question_text=query,
+            exam_id="exam-123",
             prompt_style=PromptStyle.EXPLANATORY,
             vector_store=mock_vector_store,
             db_manager=mock_db
         )
     assert result.question == query
-    # Should hit fallback because mock returns no chunks
-    assert "No context found" in result.answer
+    # Should prompt the user to attach documents first
+    assert "No documents are linked to this exam yet" in result.answer
 
 def test_answer_question_preselected_chunks(sample_chunks):
     """Test bypassing search by providing chunk_ids."""
     query = "Specific context"
     mock_db = MagicMock()
     mock_db.get_chunks_by_ids.return_value = sample_chunks
+    mock_db.add_problem.return_value = MagicMock(problem_id="prob-1")
     
     with patch.dict("os.environ", {}, clear=True):
         result = answer_question(
             question_text=query,
+            exam_id="exam-123",
             chunk_ids=["c1", "c2"],
             db_manager=mock_db
         )
@@ -86,10 +94,10 @@ def test_answer_question_preselected_chunks(sample_chunks):
 def test_build_llm_prefers_openrouter(monkeypatch):
     """Ensure OpenRouter config is used when the key is present."""
 
-    class DummyLLM(FakeListLLM):
+    class DummyLLM:
         def __init__(self, *args, **kwargs):
             self.kwargs = kwargs
-            super().__init__(responses=["ok"])
+            self.responses = ["ok"]
 
     # Swap ChatOpenAI for a capturing stub and clear env to only include OpenRouter vars
     monkeypatch.setattr("src.core.rag.ChatOpenAI", DummyLLM)

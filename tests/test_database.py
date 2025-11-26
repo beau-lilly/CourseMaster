@@ -2,6 +2,7 @@
 
 import uuid
 
+from tests.helpers import HashEmbeddings
 from src.core.database import DatabaseManager
 from src.core.types import Chunk
 from src.core.vector_store import VectorStore
@@ -13,14 +14,33 @@ def test_add_document_deduplicates_by_content(tmp_path):
     """
     db_path = tmp_path / "dedup.db"
     db = DatabaseManager(db_path=str(db_path))
+    course = db.add_course("Course A")
 
-    doc1 = db.add_document("fileA.pdf", "identical content")
-    doc2 = db.add_document("fileB.pdf", "identical content")
+    doc1 = db.add_document("fileA.pdf", "identical content", course_id=course.course_id)
+    doc2 = db.add_document("fileB.pdf", "identical content", course_id=course.course_id)
 
     assert doc1.doc_id == doc2.doc_id
     with db._get_connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
     assert count == 1
+
+
+def test_same_content_allowed_in_different_courses(tmp_path):
+    """
+    Deduplication is per-course: identical content in another course should be stored separately.
+    """
+    db_path = tmp_path / "dedup_scope.db"
+    db = DatabaseManager(db_path=str(db_path))
+    course_a = db.add_course("Course A")
+    course_b = db.add_course("Course B")
+
+    doc1 = db.add_document("fileA.pdf", "identical content", course_id=course_a.course_id)
+    doc2 = db.add_document("fileB.pdf", "identical content", course_id=course_b.course_id)
+
+    assert doc1.doc_id != doc2.doc_id
+    with db._get_connection() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+    assert count == 2
 
 
 def test_delete_chunks_for_doc(tmp_path):
@@ -29,8 +49,9 @@ def test_delete_chunks_for_doc(tmp_path):
     """
     db_path = tmp_path / "chunks.db"
     db = DatabaseManager(db_path=str(db_path))
+    course = db.add_course("Course A")
 
-    doc = db.add_document("doc.pdf", "content")
+    doc = db.add_document("doc.pdf", "content", course_id=course.course_id)
     chunks = [
         Chunk(chunk_id="c1", doc_id=doc.doc_id, chunk_text="a", chunk_index=0),
         Chunk(chunk_id="c2", doc_id=doc.doc_id, chunk_text="b", chunk_index=1),
@@ -47,11 +68,17 @@ def test_database_metadata_and_vector_store_round_trip(tmp_path):
     vector_dir = tmp_path / "vector_store_db"
 
     db = DatabaseManager(db_path=str(db_path))
-    store = VectorStore(persist_directory=vector_dir, collection_name="db_vector_test")
+    course = db.add_course("Course A")
+    exam = db.add_exam(course.course_id, "Midterm")
+    store = VectorStore(
+        persist_directory=vector_dir,
+        collection_name="db_vector_test",
+        embedding_function=HashEmbeddings(),
+    )
     store.reset()
 
-    doc = db.add_document("test_doc.pdf", "Full document text.")
-    problem = db.add_problem("Test problem text.")
+    doc = db.add_document("test_doc.pdf", "Full document text.", course_id=course.course_id)
+    problem = db.add_problem("Test problem text.", exam_id=exam.exam_id)
 
     chunk = Chunk(
         chunk_id=f"chunk_{uuid.uuid4()}",

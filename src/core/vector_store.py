@@ -34,6 +34,7 @@ class VectorStore:
         persist_directory: str | Path = "data/chroma_db",
         collection_name: str = "course_chunks",
         embedding_model_name: str = "all-MiniLM-L6-v2",
+        embedding_function: object | None = None,
     ):
         self.persist_directory = str(persist_directory)
         self.collection_name = collection_name
@@ -41,7 +42,11 @@ class VectorStore:
         
         # Initialize Embeddings
         # This will download the model if not present
-        self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model_name)
+        self.embeddings = (
+            embedding_function
+            if embedding_function is not None
+            else HuggingFaceEmbeddings(model_name=self.embedding_model_name)
+        )
         
         # Initialize Chroma
         # collection_metadata={"hnsw:space": "cosine"} ensures cosine similarity
@@ -75,16 +80,21 @@ class VectorStore:
         
         self.db.add_documents(documents)
 
-    def search(self, query_text: str, k: int = 5) -> List[VectorSearchResult]:
+    def search(self, query_text: str, k: int = 5, allowed_doc_ids: Sequence[str] | None = None) -> List[VectorSearchResult]:
         """
         Perform top-k cosine similarity search for the given query text.
         Returns chunks with cosine SIMILARITY (1 = identical, 0 = opposite).
         Duplicate chunk texts are collapsed so re-ingested files do not flood results.
+        If allowed_doc_ids is provided, only chunks from those documents are returned.
         """
         fetch_k = max(k * 4, k + 5)  # Grab extra to account for deduplication
+        search_kwargs = {"k": fetch_k}
+        if allowed_doc_ids:
+            search_kwargs["filter"] = {"doc_id": {"$in": list(set(allowed_doc_ids))}}
+
         # similarity_search_with_score in LangChain with cosine distance returns DISTANCE (lower is better).
         # Distance = 1 - Similarity (for normalized vectors).
-        results = self.db.similarity_search_with_score(query_text, k=fetch_k)
+        results = self.db.similarity_search_with_score(query_text, **search_kwargs)
         
         hits = []
         for doc, distance in results:
@@ -99,6 +109,10 @@ class VectorStore:
                 embedding=None,
             )
             hits.append(VectorSearchResult(chunk=chunk, similarity_score=similarity))
+
+        if allowed_doc_ids:
+            allowed_set = set(allowed_doc_ids)
+            hits = [hit for hit in hits if hit.chunk.doc_id in allowed_set]
 
         return self._deduplicate_hits(hits, limit=k)
 

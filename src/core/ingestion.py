@@ -47,6 +47,8 @@ def extract_text_from_file(file_path: str) -> str:
 
 def process_uploaded_file(
     file_path: str,
+    course_id: str,
+    exam_ids: Optional[list[str]] = None,
     db_manager: Optional[DatabaseManager] = None,
     vector_store: Optional[VectorStore] = None
 ) -> Document:
@@ -57,9 +59,12 @@ def process_uploaded_file(
     3. Chunk the text.
     4. Persist Chunk metadata to SQLite.
     5. Embed and store Chunks in VectorStore.
+    6. Link the document to any provided exams.
     
     Args:
         file_path: Absolute or relative path to the file on disk.
+        course_id: The course scope that owns the document.
+        exam_ids: Exams to link this document to.
         db_manager: Optional injected instance.
         vector_store: Optional injected instance.
         
@@ -80,18 +85,18 @@ def process_uploaded_file(
     filename = os.path.basename(file_path)
     content_hash = db_manager.compute_content_hash(text)
 
-    # Check if document already exists (same content)
-    existing_doc = db_manager.get_document_by_hash(content_hash)
+    # Check if document already exists (same content) within this course
+    existing_doc = db_manager.get_document_by_hash(course_id, content_hash)
     
     # 3. Save Document (SQLite) or reuse existing
     if existing_doc:
         doc = existing_doc
         # Make sure we use the freshly extracted text in case it changed
         doc.extracted_text = text
-        print(f"Document {filename} already ingested; refreshing chunks/embeddings.")
+        print(f"Document {filename} already ingested for this course; refreshing chunks/embeddings.")
     else:
         print("Saving document metadata...")
-        doc = db_manager.add_document(filename=filename, text=text)
+        doc = db_manager.add_document(filename=filename, text=text, course_id=course_id)
     
     # 3b. If doc existed, clear old chunks/embeddings before re-chunking
     if existing_doc:
@@ -112,6 +117,11 @@ def process_uploaded_file(
     # 6. Embed & Store (VectorDB)
     print("Embedding and storing in VectorStore...")
     vector_store.add_chunks(chunks)
+    
+    # 7. Link document to provided exams (if any)
+    if exam_ids:
+        for exam_id in exam_ids:
+            db_manager.attach_document_to_exam(exam_id, doc.doc_id)
     
     print("Ingestion complete.")
     return doc

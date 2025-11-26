@@ -9,6 +9,23 @@ from enum import Enum
 from typing import List, Optional
 import numpy as np
 
+
+@dataclass
+class Course:
+    """Represents a course (top-level scope)."""
+    course_id: str
+    name: str
+    created_at: datetime
+
+
+@dataclass
+class Exam:
+    """Represents an exam/scope within a course."""
+    exam_id: str
+    course_id: str
+    name: str
+    created_at: datetime
+
 class PromptStyle(Enum):
     MINIMAL = "minimal"
     EXPLANATORY = "explanatory"
@@ -19,6 +36,7 @@ class PromptStyle(Enum):
 class Document:
     """Represents an uploaded document."""
     doc_id: str
+    course_id: str
     original_filename: str
     extracted_text: str
     uploaded_at: datetime
@@ -37,6 +55,7 @@ class Chunk:
 class Problem:
     """Represents a single problem input by the user."""
     problem_id: str
+    exam_id: str
     problem_text: str
     uploaded_at: datetime
     embedding: np.ndarray | None = None

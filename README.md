@@ -1,4 +1,4 @@
-# Project Title: Study Assistant
+# Project Title: CourseMaster
 
 ## What it Does
 

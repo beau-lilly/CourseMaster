@@ -11,6 +11,7 @@ def retrieve_chunks(
     question_text: str,
     k: int = 5,
     vector_store: VectorStore | None = None,
+    allowed_doc_ids: list[str] | None = None,
 ) -> List[VectorSearchResult]:
     """
     Single entrypoint for semantic retrieval.
@@ -33,4 +34,4 @@ def retrieve_chunks(
         return []
 
     store = vector_store or VectorStore()
-    return store.search(query, k=k)
+    return store.search(query, k=k, allowed_doc_ids=allowed_doc_ids)

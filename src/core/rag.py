@@ -134,6 +134,7 @@ def build_llm(question_text: str) -> Tuple[object, str]:
 
 def answer_question(
     question_text: str,
+    exam_id: str,
     prompt_style: PromptStyle = PromptStyle.MINIMAL,
     k: int = 5,
     chunk_ids: Optional[List[str]] = None,
@@ -158,7 +159,7 @@ def answer_question(
         db_manager = DatabaseManager()
         
     # 1. Log Problem
-    problem = db_manager.add_problem(question_text)
+    problem = db_manager.add_problem(question_text, exam_id=exam_id)
     
     # 2. Retrieve Chunks
     chunks: List[Chunk] = []
@@ -170,9 +171,17 @@ def answer_question(
         # Assign dummy scores (1.0) for manual selection
         scores = [1.0] * len(chunks)
     else:
+        allowed_doc_ids = db_manager.get_document_ids_for_exam(exam_id)
+        if not allowed_doc_ids:
+            return RAGResult(
+                question=question_text,
+                answer="No documents are linked to this exam yet. Upload or attach documents first.",
+                used_chunks=[],
+                scores=[]
+            )
         # Search path
         if vector_store:
-            results = vector_store.search(question_text, k=k)
+            results = vector_store.search(question_text, k=k, allowed_doc_ids=allowed_doc_ids)
             chunks = [r.chunk for r in results]
             scores = [r.similarity_score for r in results]
             

@@ -1,0 +1,82 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+    <a href="{{ url_for('view_course', course_id=course.course_id) }}">&larr; Back to {{ course.name }}</a>
+    <h2>{{ exam.name }}</h2>
+    <p class="muted">Course: {{ course.name }}</p>
+
+    <section>
+        <h3>Documents in this exam</h3>
+        {% if exam_documents %}
+            <ul>
+                {% for doc in exam_documents %}
+                    <li>{{ doc.original_filename }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No documents attached yet.</p>
+        {% endif %}
+    </section>
+
+    <section>
+        <h4>Attach existing course documents</h4>
+        {% if attachable_docs %}
+            <form action="{{ url_for('attach_documents', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST">
+                {% for doc in attachable_docs %}
+                    <label>
+                        <input type="checkbox" name="doc_ids" value="{{ doc.doc_id }}">
+                        {{ doc.original_filename }}
+                    </label><br>
+                {% endfor %}
+                <button type="submit">Attach selected</button>
+            </form>
+        {% else %}
+            <p>No additional course documents to attach.</p>
+        {% endif %}
+    </section>
+
+    <section>
+        <h4>Upload a new document</h4>
+        <form action="{{ url_for('upload_exam_document', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST" enctype="multipart/form-data">
+            <label for="document">
+                Choose file
+                <input type="file" id="document" name="document" required>
+            </label>
+            <button type="submit">Upload to exam</button>
+        </form>
+        <p class="muted">Documents uploaded here are also added to the course library.</p>
+    </section>
+
+    <section>
+        <h3>Ask a question</h3>
+        <form action="{{ url_for('ask_question', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST">
+            <label for="question_text">Your question</label>
+            <textarea id="question_text" name="question_text" rows="4" required></textarea>
+
+            <label for="style">Answer style</label>
+            <select id="style" name="style">
+                <option value="minimal">Minimal</option>
+                <option value="explanatory">Explanatory</option>
+                <option value="tutoring">Tutoring</option>
+                <option value="similarity">Similarity</option>
+            </select>
+
+            <button type="submit">Get answer</button>
+        </form>
+    </section>
+
+    <section>
+        <h3>Questions asked for this exam</h3>
+        {% if problems %}
+            <ul>
+                {% for problem in problems %}
+                    <li>{{ problem.problem_text }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No questions have been asked yet.</p>
+        {% endif %}
+    </section>
+
+{% endblock %}

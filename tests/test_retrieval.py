@@ -2,6 +2,7 @@
 
 import pytest
 
+from tests.helpers import HashEmbeddings
 from src.core.retrieval import retrieve_chunks
 from src.core.types import Chunk
 from src.core.vector_store import VectorStore
@@ -20,6 +21,7 @@ def test_retrieve_chunks_uses_vector_store(tmp_path):
     store = VectorStore(
         persist_directory=persist_dir,
         collection_name="retrieval_test",
+        embedding_function=HashEmbeddings(),
     )
     store.reset()
 
@@ -43,7 +45,7 @@ def test_retrieve_chunks_uses_vector_store(tmp_path):
     store.add_chunks(chunks)
 
     results = retrieve_chunks(
-        "Photosynthesis is how plants turn sunlight into energy through a chemical process.",
+        target_text,
         k=1,
         vector_store=store,
     )

@@ -15,6 +15,7 @@ def long_document():
     # Total chars approx 10850. Should be ~10-11 chunks.
     return Document(
         doc_id="test-doc-long",
+        course_id="course-1",
         extracted_text=text,
         original_filename="long_story.txt",
         uploaded_at=datetime.now()
@@ -26,6 +27,7 @@ def short_document():
     text = "This is a short document. It should not be split into multiple chunks."
     return Document(
         doc_id="test-doc-short",
+        course_id="course-1",
         extracted_text=text,
         original_filename="short_note.txt",
         uploaded_at=datetime.now()
