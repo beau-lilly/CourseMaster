@@ -11,6 +11,7 @@ from flask import Flask, render_template, request, redirect, url_for
 from src.core.rag import answer_question
 from src.core.ingestion import process_uploaded_file
 from src.core.types import PromptStyle
+from src.core.database import DatabaseManager
 
 def create_app():
     
@@ -74,14 +75,20 @@ def create_app():
             selected_style = PromptStyle.MINIMAL
         
         # --- RAG LOGIC ---
+        db_manager = DatabaseManager()
         result = answer_question(
             question_text=question_text,
-            prompt_style=selected_style
+            prompt_style=selected_style,
+            db_manager=db_manager
         )
+        
+        # Get filenames
+        doc_ids = [c.doc_id for c in result.used_chunks]
+        filenames = db_manager.get_doc_filenames(list(set(doc_ids)))
         
         # Prepare chunks for display
         display_chunks = [
-            {"text": c.chunk_text, "source": c.doc_id} for c in result.used_chunks
+            {"text": c.chunk_text, "source": filenames.get(c.doc_id, c.doc_id)} for c in result.used_chunks
         ]
 
         # Render the answer.html page, passing in the data

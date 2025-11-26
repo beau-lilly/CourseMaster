@@ -177,3 +177,17 @@ class DatabaseManager:
                 embedding=None
             ))
         return chunks
+
+    def get_doc_filenames(self, doc_ids: List[str]) -> dict[str, str]:
+        """Retrieves filenames for a list of document IDs."""
+        if not doc_ids:
+            return {}
+            
+        placeholders = ",".join("?" * len(doc_ids))
+        sql = f"SELECT doc_id, original_filename FROM documents WHERE doc_id IN ({placeholders})"
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(sql, doc_ids)
+            rows = cursor.fetchall()
+            
+        return {row['doc_id']: row['original_filename'] for row in rows}
