@@ -85,11 +85,19 @@ def create_app():
         # Get filenames
         doc_ids = [c.doc_id for c in result.used_chunks]
         filenames = db_manager.get_doc_filenames(list(set(doc_ids)))
-        
-        # Prepare chunks for display
-        display_chunks = [
-            {"text": c.chunk_text, "source": filenames.get(c.doc_id, c.doc_id)} for c in result.used_chunks
-        ]
+
+        # Prepare chunks for display with rank and similarity score
+        display_chunks = []
+        scores = result.scores or []
+        for rank, chunk in enumerate(result.used_chunks, start=1):
+            score = scores[rank - 1] if rank - 1 < len(scores) else None
+            display_chunks.append({
+                "rank": rank,
+                "text": chunk.chunk_text,
+                "source": filenames.get(chunk.doc_id, chunk.doc_id),
+                "chunk_index": chunk.chunk_index,
+                "similarity": score
+            })
 
         # Render the answer.html page, passing in the data
         return render_template(

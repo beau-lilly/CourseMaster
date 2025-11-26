@@ -92,10 +92,10 @@ def test_chunk_size(long_document):
     
     assert len(chunks) > 0
     
-    # Check that all chunks (except potentially the last one) are around the chunk size
+    # Check that all chunks (except potentially the last one) are within reasonable bounds
     for chunk in chunks[:-1]: # All but the last
         assert len(chunk.chunk_text) <= 1000
-        # It's a recursive splitter, so it might be slightly less if it finds a good separator
-        assert len(chunk.chunk_text) > 800 # Should be close to 1000
+        # Small lead chunks should be merged to avoid ultra-short results
+        assert len(chunk.chunk_text) >= 300
 
     assert len(chunks[-1].chunk_text) <= 1000 # Last chunk must also be <= 1000

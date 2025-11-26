@@ -75,10 +75,12 @@ class VectorStore:
         """
         Perform top-k cosine similarity search for the given query text.
         Returns chunks with cosine SIMILARITY (1 = identical, 0 = opposite).
+        Duplicate chunk texts are collapsed so re-ingested files do not flood results.
         """
+        fetch_k = max(k * 4, k + 5)  # Grab extra to account for deduplication
         # similarity_search_with_score in LangChain with cosine distance returns DISTANCE (lower is better).
         # Distance = 1 - Similarity (for normalized vectors).
-        results = self.db.similarity_search_with_score(query_text, k=k)
+        results = self.db.similarity_search_with_score(query_text, k=fetch_k)
         
         hits = []
         for doc, distance in results:
@@ -94,7 +96,7 @@ class VectorStore:
             )
             hits.append(VectorSearchResult(chunk=chunk, similarity_score=similarity))
 
-        return hits
+        return self._deduplicate_hits(hits, limit=k)
 
     def get_retriever(self, k: int = 5):
         """Returns a LangChain retriever interface."""
@@ -116,3 +118,43 @@ class VectorStore:
             embedding_function=self.embeddings,
             collection_metadata={"hnsw:space": "cosine"}
         )
+
+    def delete_chunks(self, chunk_ids: Sequence[str]) -> None:
+        """
+        Remove specific chunk embeddings from the vector store.
+        """
+        if not chunk_ids:
+            return
+        try:
+            self.db.delete(ids=list(chunk_ids))
+        except Exception:
+            # Best effort; ignore if ids are missing
+            pass
+
+    @staticmethod
+    def _normalize_chunk_text(text: str) -> str:
+        """Collapse whitespace and case to compare chunk bodies reliably."""
+        return " ".join(text.split()).strip().lower()
+
+    @staticmethod
+    def _deduplicate_hits(
+        hits: Sequence[VectorSearchResult], limit: int
+    ) -> List[VectorSearchResult]:
+        """
+        Remove duplicate chunk bodies while preserving score order.
+        """
+        seen_texts = set()
+        unique_hits: List[VectorSearchResult] = []
+
+        for hit in hits:
+            normalized = VectorStore._normalize_chunk_text(hit.chunk.chunk_text)
+            if not normalized:
+                continue
+            if normalized in seen_texts:
+                continue
+            seen_texts.add(normalized)
+            unique_hits.append(hit)
+            if len(unique_hits) >= limit:
+                break
+
+        return unique_hits

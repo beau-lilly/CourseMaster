@@ -78,11 +78,27 @@ def process_uploaded_file(
     print(f"Extracting text from {file_path}...")
     text = extract_text_from_file(file_path)
     filename = os.path.basename(file_path)
+    content_hash = db_manager.compute_content_hash(text)
+
+    # Check if document already exists (same content)
+    existing_doc = db_manager.get_document_by_hash(content_hash)
     
-    # 3. Save Document (SQLite)
-    # This generates the doc_id and timestamps
-    print("Saving document metadata...")
-    doc = db_manager.add_document(filename=filename, text=text)
+    # 3. Save Document (SQLite) or reuse existing
+    if existing_doc:
+        doc = existing_doc
+        # Make sure we use the freshly extracted text in case it changed
+        doc.extracted_text = text
+        print(f"Document {filename} already ingested; refreshing chunks/embeddings.")
+    else:
+        print("Saving document metadata...")
+        doc = db_manager.add_document(filename=filename, text=text)
+    
+    # 3b. If doc existed, clear old chunks/embeddings before re-chunking
+    if existing_doc:
+        old_chunk_ids = db_manager.get_chunk_ids_for_doc(doc.doc_id)
+        if old_chunk_ids:
+            db_manager.delete_chunks_for_doc(doc.doc_id)
+            vector_store.delete_chunks(old_chunk_ids)
     
     # 4. Chunking
     print("Chunking document...")

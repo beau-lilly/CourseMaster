@@ -22,6 +22,7 @@ class Document:
     original_filename: str
     extracted_text: str
     uploaded_at: datetime
+    content_hash: str | None = None
 
 @dataclass
 class Chunk:

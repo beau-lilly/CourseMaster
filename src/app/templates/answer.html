@@ -21,7 +21,10 @@
 
     {% for chunk in chunks %}
         <details>
-            <summary>Chunk {{ loop.index }} (from: {{ chunk.source }})</summary>
+            <summary>
+                Result {{ chunk.rank }} (chunk #{{ chunk.chunk_index }} from: {{ chunk.source }})
+                {% if chunk.similarity is not none %}- similarity: {{ "%.3f"|format(chunk.similarity) }}{% endif %}
+            </summary>
             <p>{{ chunk.text }}</p>
         </details>
     {% else %}

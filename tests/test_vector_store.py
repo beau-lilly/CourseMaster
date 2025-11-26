@@ -1,7 +1,7 @@
 """Integration test for the VectorStore (Chroma + SentenceTransformers)."""
 
 from src.core.types import Chunk
-from src.core.vector_store import VectorStore
+from src.core.vector_store import VectorStore, VectorSearchResult
 
 
 def test_vector_store_search_returns_expected_chunk(tmp_path):
@@ -40,3 +40,43 @@ def test_vector_store_search_returns_expected_chunk(tmp_path):
     assert top_result.chunk.chunk_id == "chunk-photosynthesis"
     assert top_result.chunk.doc_id == "doc-1"
     assert top_result.similarity_score > 0.95
+
+
+def test_vector_store_deduplicates_hits():
+    """
+    Duplicate chunk bodies should not be returned multiple times.
+    """
+    hits = [
+        VectorSearchResult(
+            chunk=Chunk(
+                chunk_id="chunk-1",
+                doc_id="doc-1",
+                chunk_text="Repeat me",
+                chunk_index=0,
+            ),
+            similarity_score=0.99,
+        ),
+        VectorSearchResult(
+            chunk=Chunk(
+                chunk_id="chunk-2",
+                doc_id="doc-2",
+                chunk_text="Repeat   me",
+                chunk_index=1,
+            ),
+            similarity_score=0.97,
+        ),
+        VectorSearchResult(
+            chunk=Chunk(
+                chunk_id="chunk-3",
+                doc_id="doc-3",
+                chunk_text="Different chunk",
+                chunk_index=0,
+            ),
+            similarity_score=0.5,
+        ),
+    ]
+
+    deduped = VectorStore._deduplicate_hits(hits, limit=3)
+    assert len(deduped) == 2
+    assert deduped[0].chunk.chunk_id == "chunk-1"
+    assert deduped[1].chunk.chunk_id == "chunk-3"

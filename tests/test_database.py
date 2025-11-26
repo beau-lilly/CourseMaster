@@ -7,6 +7,41 @@ from src.core.types import Chunk
 from src.core.vector_store import VectorStore
 
 
+def test_add_document_deduplicates_by_content(tmp_path):
+    """
+    Re-uploading the same content should not create duplicate documents.
+    """
+    db_path = tmp_path / "dedup.db"
+    db = DatabaseManager(db_path=str(db_path))
+
+    doc1 = db.add_document("fileA.pdf", "identical content")
+    doc2 = db.add_document("fileB.pdf", "identical content")
+
+    assert doc1.doc_id == doc2.doc_id
+    with db._get_connection() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+    assert count == 1
+
+
+def test_delete_chunks_for_doc(tmp_path):
+    """
+    Chunks for a document can be removed in bulk.
+    """
+    db_path = tmp_path / "chunks.db"
+    db = DatabaseManager(db_path=str(db_path))
+
+    doc = db.add_document("doc.pdf", "content")
+    chunks = [
+        Chunk(chunk_id="c1", doc_id=doc.doc_id, chunk_text="a", chunk_index=0),
+        Chunk(chunk_id="c2", doc_id=doc.doc_id, chunk_text="b", chunk_index=1),
+    ]
+    db.save_chunks(chunks)
+    assert db.get_chunk_count_for_doc(doc.doc_id) == 2
+
+    db.delete_chunks_for_doc(doc.doc_id)
+    assert db.get_chunk_count_for_doc(doc.doc_id) == 0
+
+
 def test_database_metadata_and_vector_store_round_trip(tmp_path):
     db_path = tmp_path / "test_suite.db"
     vector_dir = tmp_path / "vector_store_db"

@@ -26,9 +26,31 @@ def chunk_document(doc: Document) -> List[Chunk]:
     
     # Split the document text
     split_texts = text_splitter.split_text(doc.extracted_text)
+
+    # Post-process to avoid very small lead/trailing chunks (e.g., title slides)
+    MIN_CHUNK_SIZE = 300
+    MAX_CHUNK_SIZE = 1000  # keep within the configured chunk size
+    merged_texts: List[str] = []
+
+    buffer = ""
+    for piece in split_texts:
+        # Start a new buffer if empty
+        if not buffer:
+            buffer = piece
+            continue
+
+        if len(buffer) < MIN_CHUNK_SIZE and len(buffer) + len(piece) <= MAX_CHUNK_SIZE:
+            # Merge tiny chunk with its successor to avoid one-line results
+            buffer = buffer + "\n" + piece
+        else:
+            merged_texts.append(buffer)
+            buffer = piece
+
+    if buffer:
+        merged_texts.append(buffer)
     
     chunks = []
-    for i, text in enumerate(split_texts):
+    for i, text in enumerate(merged_texts):
         # Create a new Chunk object for each piece of text
         # The embedding field is left as None, to be filled in later.
         chunk = Chunk(
