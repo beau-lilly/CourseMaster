@@ -1,133 +1,163 @@
 """
-LLM interaction and prompt engineering.
+RAG Orchestration using LangChain.
 """
-import os
-from typing import List, Optional, Dict, Any, Callable
-from src.core.types import Chunk, PromptStyle
+from typing import List, Optional
+
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_community.llms import FakeListLLM
+
+from src.core.types import Chunk, PromptStyle, RAGResult
+from src.core.vector_store import VectorStore
+from src.core.database import DatabaseManager
 
 # --- 1. Prompt Templates ---
 
-TEMPLATE_MINIMAL = """
-You are a helpful assistant. Answer the user's question based ONLY on the provided context.
+TEMPLATE_MINIMAL = """You are a helpful assistant. Answer the user's question based ONLY on the provided context.
 Keep your answer brief and to the point.
 
 Context:
-{context_str}
+{context}
 
-Question: {query}
+Question: {question}
 Answer:
 """
 
-TEMPLATE_EXPLANATORY = """
-You are an expert tutor. Answer the user's question using the provided context.
+TEMPLATE_EXPLANATORY = """You are an expert tutor. Answer the user's question using the provided context.
 You must cite the specific chunk index (e.g., [Chunk 1]) that supports each part of your answer.
 
 Context:
-{context_str}
+{context}
 
-Question: {query}
+Question: {question}
 Answer (with citations):
 """
 
-TEMPLATE_TUTORING = """
-You are a Socratic tutor. Do not give the answer directly.
+TEMPLATE_TUTORING = """You are a Socratic tutor. Do not give the answer directly.
 Instead, use the context to guide the user toward the answer with a hint or a leading question.
 
 Context:
-{context_str}
+{context}
 
-Question: {query}
+Question: {question}
 Hint:
 """
 
-TEMPLATE_SIMILARITY = """
-Analyze why the following chunks were retrieved for the user's question.
+TEMPLATE_SIMILARITY = """Analyze why the following chunks were retrieved for the user's question.
 Explain the relevance of each chunk to the query.
 
 Context:
-{context_str}
+{context}
 
-Question: {query}
+Question: {question}
 Analysis:
 """
 
-# --- 2. Prompt Registry ---
-
-PROMPT_REGISTRY = {
-    PromptStyle.MINIMAL: TEMPLATE_MINIMAL,
-    PromptStyle.EXPLANATORY: TEMPLATE_EXPLANATORY,
-    PromptStyle.TUTORING: TEMPLATE_TUTORING,
-    PromptStyle.SIMILARITY: TEMPLATE_SIMILARITY,
+PROMPT_TEMPLATES = {
+    PromptStyle.MINIMAL: PromptTemplate.from_template(TEMPLATE_MINIMAL),
+    PromptStyle.EXPLANATORY: PromptTemplate.from_template(TEMPLATE_EXPLANATORY),
+    PromptStyle.TUTORING: PromptTemplate.from_template(TEMPLATE_TUTORING),
+    PromptStyle.SIMILARITY: PromptTemplate.from_template(TEMPLATE_SIMILARITY),
 }
 
-# --- 3. Context Formatting ---
+# --- 2. Helpers ---
 
-def format_context(chunks: List[Chunk], max_tokens: int = 2000) -> str:
+def format_docs(chunks: List[Chunk]) -> str:
+    """Formats chunks for the prompt."""
+    return "\n\n".join(
+        f"[Chunk {c.chunk_index}] (Source: {c.doc_id}): {c.chunk_text}" 
+        for c in chunks
+    )
+
+# --- 3. Orchestration ---
+
+def answer_question(
+    question_text: str,
+    prompt_style: PromptStyle = PromptStyle.MINIMAL,
+    k: int = 5,
+    chunk_ids: Optional[List[str]] = None,
+    vector_store: Optional[VectorStore] = None,
+    db_manager: Optional[DatabaseManager] = None
+) -> RAGResult:
     """
-    Serializes chunks into a string format for the LLM.
-    Format: [Chunk {index}] (Source: {doc_id}): {text}
+    Orchestrates the RAG pipeline:
+    1. Logs the problem.
+    2. Retrieves chunks (via search or ID).
+    3. Logs retrieval.
+    4. Generates answer using LangChain.
     """
-    formatted_parts = []
-    current_length = 0
     
-    # Simple character estimation (1 token ~= 4 chars)
-    max_chars = max_tokens * 4
-
-    for chunk in chunks:
-        # Create the header for the chunk
-        header = f"\n[Chunk {chunk.chunk_index}] (Source: {chunk.doc_id}):\n"
-        content = chunk.chunk_text
-        entry = header + content + "\n"
-        
-        if current_length + len(entry) > max_chars:
-            break
+    # Init dependencies if not provided
+    if vector_store is None:
+        # Only initialize if we need to search
+        if not chunk_ids:
+            vector_store = VectorStore()
             
-        formatted_parts.append(entry)
-        current_length += len(entry)
+    if db_manager is None:
+        db_manager = DatabaseManager()
+        
+    # 1. Log Problem
+    problem = db_manager.add_problem(question_text)
     
-    return "".join(formatted_parts).strip()
-
-# --- 4. Prompt Construction ---
-
-def build_prompt(query: str, chunks: List[Chunk], style: PromptStyle) -> str:
-    """
-    Selects the template from the registry and fills it with context and query.
-    """
-    template = PROMPT_REGISTRY.get(style, TEMPLATE_MINIMAL)
-    context_str = format_context(chunks)
-    return template.format(context_str=context_str, query=query)
-
-# --- 5. LLM Abstraction (The Testable Part) ---
-
-class LLMProvider:
-    """
-    Abstracts the LLM provider. 
-    In 'stub' mode, it just returns the prompt (perfect for testing).
-    """
-    def __init__(self, provider_type: str = "stub", **kwargs):
-        self.provider_type = provider_type
-        self.kwargs = kwargs
-
-    def generate(self, prompt: str) -> str:
-        if self.provider_type == "stub":
-            return f"[STUB RESPONSE] Processed prompt length: {len(prompt)}"
+    # 2. Retrieve Chunks
+    chunks: List[Chunk] = []
+    scores: List[float] = []
+    
+    if chunk_ids:
+        # Preselected path
+        chunks = db_manager.get_chunks_by_ids(chunk_ids)
+        # Assign dummy scores (1.0) for manual selection
+        scores = [1.0] * len(chunks)
+    else:
+        # Search path
+        if vector_store:
+            results = vector_store.search(question_text, k=k)
+            chunks = [r.chunk for r in results]
+            scores = [r.similarity_score for r in results]
+            
+            # Log retrieval
+            for r in results:
+                db_manager.log_retrieval(problem.problem_id, r.chunk.chunk_id, r.similarity_score)
+        else:
+            # Should not happen if logic above is correct, but safe fallback
+            chunks = []
+            
+    # 3. Fallback check
+    if not chunks:
+        return RAGResult(
+            question=question_text,
+            answer="No context found for this query.",
+            used_chunks=[],
+            scores=[]
+        )
         
-        if self.provider_type == "openai":
-            # Placeholder for future OpenAI implementation
-            # return openai.ChatCompletion.create(...)
-            pass
-        
-        if self.provider_type == "huggingface":
-            # Placeholder for future HF implementation
-            pass
+    # 4. Build Chain
+    # Select template
+    prompt_template = PROMPT_TEMPLATES.get(prompt_style, PROMPT_TEMPLATES[PromptStyle.MINIMAL])
+    
+    # Stub LLM (This would be replaced by ChatOpenAI or similar in production)
+    # We use FakeListLLM to satisfy the requirement of a "stub"
+    llm = FakeListLLM(responses=[f"[STUB RESPONSE] Processed prompt for query: {question_text}"])
+    
+    # Define chain using LCEL
+    chain = (
+        prompt_template 
+        | llm 
+        | StrOutputParser()
+    )
+    
+    # 5. Execute
+    context_str = format_docs(chunks)
+    answer = chain.invoke({"context": context_str, "question": question_text})
+    
+    return RAGResult(
+        question=question_text,
+        answer=answer,
+        used_chunks=chunks,
+        scores=scores
+    )
 
-        raise ValueError(f"Unknown provider type: {self.provider_type}")
-
-# Singleton or factory usage
-def get_llm_response(query: str, chunks: List[Chunk], style: PromptStyle = PromptStyle.MINIMAL, provider: str = "stub") -> str:
-    """
-    High-level function to coordinate prompt building and generation.
-    """
-    prompt = build_prompt(query, chunks, style)
-    llm = LLMProvider(provider_type=provider)
-    return llm.generate(prompt)
+# Backward compatibility/alias if needed, or can be removed
+def get_llm_response(*args, **kwargs):
+    raise DeprecationWarning("Use answer_question instead.")

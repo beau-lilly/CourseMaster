@@ -5,6 +5,12 @@ Web application entry point and routes (Flask).
 import os
 from flask import Flask, render_template, request, redirect, url_for
 
+# Import RAG Logic
+# Note: We import inside routes or here if circular deps aren't an issue.
+# Here is fine as src.app depends on src.core, not vice-versa.
+from src.core.rag import answer_question
+from src.core.types import PromptStyle
+
 def create_app():
     
     # __name__ tells Flask where to look for templates and static files
@@ -43,30 +49,35 @@ def create_app():
 
     @app.route('/ask', methods=['POST'])
     def ask_question():
-        """Handles the question form submission (Decision B2.2)."""
+        """Handles the question form submission."""
         
         # Get the question from the form
         question_text = request.form['question_text']
         
-        # --- ML LOGIC PLUG-IN ---
-        # TODO: 1. Call a function from src.core.rag to get the answer
-        #       (e.g., result = rag.answer_question(question_text))
+        # Get the selected style (default to 'minimal')
+        style_str = request.form.get('style', 'minimal').upper()
+        try:
+            selected_style = PromptStyle[style_str]
+        except KeyError:
+            selected_style = PromptStyle.MINIMAL
         
-        # --- DUMMY DATA (for testing the frontend) ---
-        # Replace this with the actual result from your RAG function
-        dummy_explanation = f"This is a dummy explanation for your question: '{question_text}'. The system will generate a real answer here."
-        dummy_chunks = [
-            {"text": "This is the first dummy chunk of text from a document.", "source": "dummy_doc_1.pdf"},
-            {"text": "This is a second, even more relevant dummy chunk.", "source": "dummy_doc_2.pdf"},
+        # --- RAG LOGIC ---
+        result = answer_question(
+            question_text=question_text,
+            prompt_style=selected_style
+        )
+        
+        # Prepare chunks for display
+        display_chunks = [
+            {"text": c.chunk_text, "source": c.doc_id} for c in result.used_chunks
         ]
-        # --- END DUMMY DATA ---
 
         # Render the answer.html page, passing in the data
         return render_template(
             'answer.html',
-            question=question_text,
-            explanation=dummy_explanation, # Use dummy_explanation
-            chunks=dummy_chunks            # Use dummy_chunks
+            question=result.question,
+            explanation=result.answer, 
+            chunks=display_chunks
         )
 
     return app

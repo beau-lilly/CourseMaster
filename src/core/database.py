@@ -145,5 +145,35 @@ class DatabaseManager:
             row = cursor.fetchone()
             return row['chunk_text'] if row else None
 
-    # We'll need more methods later, e.g., to save embeddings for problems,
-    # log retrievals, and get documents, but this is a solid start.
+    def log_retrieval(self, problem_id: str, chunk_id: str, score: float):
+        """Logs a retrieval event."""
+        sql = """
+        INSERT INTO retrieval_log (problem_id, retrieved_chunk_id, similarity_score, timestamp)
+        VALUES (?, ?, ?, ?)
+        """
+        with self._get_connection() as conn:
+            conn.execute(sql, (problem_id, chunk_id, score, datetime.now().isoformat()))
+            conn.commit()
+
+    def get_chunks_by_ids(self, chunk_ids: List[str]) -> List[Chunk]:
+        """Retrieves Chunk objects by their IDs."""
+        if not chunk_ids:
+            return []
+            
+        placeholders = ",".join("?" * len(chunk_ids))
+        sql = f"SELECT * FROM chunks WHERE chunk_id IN ({placeholders})"
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(sql, chunk_ids)
+            rows = cursor.fetchall()
+            
+        chunks = []
+        for row in rows:
+            chunks.append(Chunk(
+                chunk_id=row['chunk_id'],
+                doc_id=row['doc_id'],
+                chunk_text=row['chunk_text'],
+                chunk_index=row['chunk_index'],
+                embedding=None
+            ))
+        return chunks

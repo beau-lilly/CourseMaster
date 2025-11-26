@@ -1,17 +1,16 @@
 """
-Vector storage and retrieval using Sentence Transformers + ChromaDB.
+Vector storage and retrieval using Sentence Transformers + ChromaDB via LangChain.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
 
-import chromadb
-from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.documents import Document as LCDocument
 
 from .types import Chunk
-
 
 @dataclass
 class VectorSearchResult:
@@ -22,7 +21,8 @@ class VectorSearchResult:
 
 class VectorStore:
     """
-    Encapsulates embedding generation, persistent storage, and similarity search.
+    Encapsulates embedding generation, persistent storage, and similarity search
+    using LangChain components.
     """
 
     def __init__(
@@ -31,22 +31,22 @@ class VectorStore:
         collection_name: str = "course_chunks",
         embedding_model_name: str = "all-MiniLM-L6-v2",
     ):
-        self.persist_directory = Path(persist_directory)
-        self.persist_directory.mkdir(parents=True, exist_ok=True)
-
+        self.persist_directory = str(persist_directory)
         self.collection_name = collection_name
         self.embedding_model_name = embedding_model_name
-
-        # Disable telemetry to avoid unwanted network calls.
-        self._client = chromadb.PersistentClient(
-            path=str(self.persist_directory),
-            settings=Settings(anonymized_telemetry=False),
+        
+        # Initialize Embeddings
+        # This will download the model if not present
+        self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model_name)
+        
+        # Initialize Chroma
+        # collection_metadata={"hnsw:space": "cosine"} ensures cosine similarity
+        self.db = Chroma(
+            persist_directory=self.persist_directory,
+            collection_name=self.collection_name,
+            embedding_function=self.embeddings,
+            collection_metadata={"hnsw:space": "cosine"}
         )
-        self._collection = self._client.get_or_create_collection(
-            name=self.collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
-        self._model = SentenceTransformer(self.embedding_model_name)
 
     def add_chunks(self, chunks: Sequence[Chunk]) -> None:
         """
@@ -55,78 +55,64 @@ class VectorStore:
         if not chunks:
             return
 
-        texts = [chunk.chunk_text for chunk in chunks]
-        embeddings = self._model.encode(
-            texts,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        )
-
-        # Attach embeddings back to the Chunk objects for downstream use.
-        for chunk, embedding in zip(chunks, embeddings):
-            chunk.embedding = embedding
-
-        self._collection.add(
-            ids=[chunk.chunk_id for chunk in chunks],
-            embeddings=[embedding.tolist() for embedding in embeddings],
-            metadatas=[
-                {"doc_id": chunk.doc_id, "chunk_index": chunk.chunk_index}
-                for chunk in chunks
-            ],
-            documents=[chunk.chunk_text for chunk in chunks],
-        )
+        # Convert Chunks to LangChain Documents
+        documents = [
+            LCDocument(
+                page_content=chunk.chunk_text,
+                metadata={
+                    "chunk_id": chunk.chunk_id,
+                    "doc_id": chunk.doc_id,
+                    "chunk_index": chunk.chunk_index
+                },
+                id=chunk.chunk_id 
+            )
+            for chunk in chunks
+        ]
+        
+        self.db.add_documents(documents)
 
     def search(self, query_text: str, k: int = 5) -> List[VectorSearchResult]:
         """
         Perform top-k cosine similarity search for the given query text.
+        Returns chunks with cosine SIMILARITY (1 = identical, 0 = opposite).
         """
-        query_embedding = self._model.encode(
-            query_text,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        )
-
-        results = self._collection.query(
-            query_embeddings=[query_embedding.tolist()],
-            n_results=k,
-            include=["metadatas", "documents", "distances"],
-        )
-
+        # similarity_search_with_score in LangChain with cosine distance returns DISTANCE (lower is better).
+        # Distance = 1 - Similarity (for normalized vectors).
+        results = self.db.similarity_search_with_score(query_text, k=k)
+        
         hits = []
-        ids = results.get("ids", [[]])[0]
-        metadatas = results.get("metadatas", [[]])[0]
-        documents = results.get("documents", [[]])[0]
-        distances = results.get("distances", [[]])[0]
-
-        for chunk_id, metadata, document, distance in zip(
-            ids, metadatas, documents, distances
-        ):
-            # Chroma returns distance; convert to cosine similarity.
-            similarity = 1.0 - float(distance)
-            similarity = max(0.0, min(1.0, similarity))
-
+        for doc, distance in results:
+            # Convert cosine distance to similarity
+            similarity = 1.0 - distance
+            
             chunk = Chunk(
-                chunk_id=chunk_id,
-                doc_id=metadata.get("doc_id", ""),
-                chunk_text=document,
-                chunk_index=metadata.get("chunk_index", 0),
+                chunk_id=doc.metadata.get("chunk_id", "") or (doc.id if hasattr(doc, 'id') else ""),
+                doc_id=doc.metadata.get("doc_id", ""),
+                chunk_text=doc.page_content,
+                chunk_index=doc.metadata.get("chunk_index", 0),
                 embedding=None,
             )
             hits.append(VectorSearchResult(chunk=chunk, similarity_score=similarity))
 
         return hits
 
+    def get_retriever(self, k: int = 5):
+        """Returns a LangChain retriever interface."""
+        return self.db.as_retriever(search_kwargs={"k": k})
+
     def reset(self) -> None:
         """
         Clear the collection and recreate it (useful for testing).
         """
         try:
-            self._client.delete_collection(self.collection_name)
+            self.db.delete_collection()
         except Exception:
-            # Collection may not exist yet.
             pass
-
-        self._collection = self._client.get_or_create_collection(
-            name=self.collection_name,
-            metadata={"hnsw:space": "cosine"},
+        
+        # Re-initialize
+        self.db = Chroma(
+            persist_directory=self.persist_directory,
+            collection_name=self.collection_name,
+            embedding_function=self.embeddings,
+            collection_metadata={"hnsw:space": "cosine"}
         )

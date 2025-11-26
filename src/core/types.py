@@ -6,6 +6,7 @@ Core dataclasses/types (e.g., Document, Chunk, RAGResult).
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import List, Optional
 import numpy as np
 
 class PromptStyle(Enum):
@@ -38,3 +39,11 @@ class Problem:
     problem_text: str
     uploaded_at: datetime
     embedding: np.ndarray | None = None
+
+@dataclass
+class RAGResult:
+    """Encapsulates the full result of a RAG query."""
+    question: str
+    answer: str
+    used_chunks: List[Chunk]
+    scores: Optional[List[float]] = None
