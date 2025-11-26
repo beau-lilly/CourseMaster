@@ -11,4 +11,21 @@
 4. Configure environment variables: Copy `.env.example` to `.env` and add your API keys.
 
 ## Running the Application
-(Pending)
+
+1. Navigate to the project root:
+   ```bash
+   cd course_master
+   ```
+
+2. Activate your virtual environment:
+   ```bash
+   source venv/bin/activate
+   # On Windows use: venv\Scripts\activate
+   ```
+
+3. Run the application module:
+   ```bash
+   python -m src.app.main
+   ```
+
+4. Open your browser to [http://127.0.0.1:5000](http://127.0.0.1:5000).
