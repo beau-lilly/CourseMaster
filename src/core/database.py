@@ -2,27 +2,25 @@
 
 import sqlite3
 import uuid
-import numpy as np
-import chromadb
 from datetime import datetime
-from typing import List, Tuple, Dict, Any
+from pathlib import Path
+from typing import List
 
 # Import our defined types and config
 from .config import DB_PATH
 from .types import Document, Chunk, Problem
 
 class DatabaseManager:
-    """Handles all database operations for the study tool."""
+    """
+    Handles SQLite-backed metadata storage for the study tool.
+    Vector embeddings and similarity search live in VectorStore.
+    """
 
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
-        
-        # Initialize ChromaDB client
-        # We create a separate folder for Chroma data based on the DB_PATH
-        chroma_path = db_path.replace(".db", "_chroma_db")
-        self.chroma_client = chromadb.PersistentClient(path=chroma_path)
-        self.collection = self.chroma_client.get_or_create_collection(name="study_chunks")
-        
+
+        # Ensure the parent directory exists before touching the DB file.
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._create_tables()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -117,16 +115,19 @@ class DatabaseManager:
         return problem
 
     def save_chunks(self, chunks: List[Chunk]):
-        """Saves a list of Chunk objects to the database and ChromaDB."""
-        # 1. Save Metadata/Text to SQLite
-        chunk_data = []
-        for chunk in chunks:
-            chunk_data.append((
+        """Saves a list of Chunk metadata/text to SQLite."""
+        if not chunks:
+            return
+
+        chunk_data = [
+            (
                 chunk.chunk_id,
                 chunk.doc_id,
                 chunk.chunk_text,
-                chunk.chunk_index
-            ))
+                chunk.chunk_index,
+            )
+            for chunk in chunks
+        ]
 
         sql = """
         INSERT INTO chunks (chunk_id, doc_id, chunk_text, chunk_index)
@@ -135,41 +136,6 @@ class DatabaseManager:
         with self._get_connection() as conn:
             conn.executemany(sql, chunk_data)
             conn.commit()
-
-        # 2. Save Vectors to ChromaDB
-        # Filter out chunks that might not have embeddings (if any)
-        valid_chunks = [c for c in chunks if c.embedding is not None]
-        
-        if valid_chunks:
-            self.collection.add(
-                ids=[c.chunk_id for c in valid_chunks],
-                embeddings=[c.embedding.tolist() for c in valid_chunks], # Chroma expects lists
-                metadatas=[{"doc_id": c.doc_id, "chunk_index": c.chunk_index} for c in valid_chunks],
-                documents=[c.chunk_text for c in valid_chunks]
-            )
-
-    def query_similar_chunks(self, query_embedding: np.ndarray, n_results: int = 5) -> List[Dict[str, Any]]:
-        """
-        Searches ChromaDB for chunks similar to the query embedding.
-        """
-        results = self.collection.query(
-            query_embeddings=[query_embedding.tolist()],
-            n_results=n_results,
-            include=["metadatas", "documents", "distances"]
-        )
-        
-        # Flatten the results (Chroma returns lists of lists)
-        formatted_results = []
-        if results['ids'] and results['ids'][0]:
-            for i in range(len(results['ids'][0])):
-                formatted_results.append({
-                    "chunk_id": results['ids'][0][i],
-                    "doc_id": results['metadatas'][0][i]['doc_id'],
-                    "chunk_text": results['documents'][0][i],
-                    "distance": results['distances'][0][i]
-                })
-                
-        return formatted_results
 
     def get_chunk_text(self, chunk_id: str) -> str | None:
         """Retrieves the raw text of a single chunk by its ID."""
