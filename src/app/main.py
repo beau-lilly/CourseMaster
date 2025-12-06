@@ -3,7 +3,7 @@ Web application entry point and routes (Flask).
 """
 
 import os
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, flash
 from werkzeug.utils import secure_filename
 
 from src.core.rag import answer_question
@@ -28,6 +28,7 @@ def _save_upload(file) -> str:
 def create_app():
     # __name__ tells Flask where to look for templates and static files
     app = Flask(__name__)
+    app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret")
     db_manager = DatabaseManager()
     
     # --- Routes ---
@@ -72,7 +73,11 @@ def create_app():
             return redirect(url_for('view_course', course_id=course_id))
 
         file_path = _save_upload(file)
-        process_uploaded_file(file_path, course_id=course_id, exam_ids=None, db_manager=db_manager)
+        _, message = process_uploaded_file(file_path, course_id=course_id, exam_ids=None, db_manager=db_manager)
+        if message:
+            flash(message, "warning")
+        else:
+            flash("Document uploaded successfully.", "success")
         return redirect(url_for('view_course', course_id=course_id))
 
     @app.route('/courses/<course_id>/exams', methods=['POST'])
@@ -184,7 +189,11 @@ def create_app():
             return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
 
         file_path = _save_upload(file)
-        process_uploaded_file(file_path, course_id=course_id, exam_ids=[exam_id], db_manager=db_manager)
+        _, message = process_uploaded_file(file_path, course_id=course_id, exam_ids=[exam_id], db_manager=db_manager)
+        if message:
+            flash(message, "warning")
+        else:
+            flash("Document uploaded successfully.", "success")
         return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
 
     @app.route('/courses/<course_id>/exams/<exam_id>/documents/attach', methods=['POST'])

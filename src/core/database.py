@@ -497,6 +497,20 @@ class DatabaseManager:
             row = conn.execute(sql, (doc_id,)).fetchone()
             return self._row_to_document(row) if row else None
 
+    def get_document_by_name(self, course_id: str, filename: str) -> Optional[Document]:
+        """Returns an existing document by filename within a course."""
+        sql = """
+        SELECT doc_id, course_id, original_filename, extracted_text, uploaded_at, content_hash
+        FROM documents
+        WHERE course_id = ? AND original_filename = ?
+        LIMIT 1
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(sql, (course_id, filename)).fetchone()
+            if not row:
+                return None
+            return self._row_to_document(row)
+
     def get_document_by_hash(self, course_id: str, content_hash: str) -> Optional[Document]:
         """Returns an existing document that matches the given content hash within a course."""
         sql = """

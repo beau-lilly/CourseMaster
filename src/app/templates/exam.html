@@ -6,6 +6,8 @@
     <h2>{{ exam.name }}</h2>
     <p class="muted">Course: {{ course.name }}</p>
 
+    {% set flashes = get_flashed_messages(with_categories=True) %}
+
     <section>
         <h3>Documents in this exam</h3>
         {% if exam_documents %}
@@ -38,6 +40,13 @@
 
     <section>
         <h4>Upload a new document</h4>
+        {% if flashes %}
+            <div class="grid" aria-live="polite">
+                {% for category, message in flashes %}
+                    <article class="{{ 'secondary' if category == 'warning' else 'success' }}">{{ message }}</article>
+                {% endfor %}
+            </div>
+        {% endif %}
         <form action="{{ url_for('upload_exam_document', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST" enctype="multipart/form-data">
             <label for="document">
                 Choose file

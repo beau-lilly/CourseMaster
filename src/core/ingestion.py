@@ -4,7 +4,7 @@ Functions for parsing files (PDF, TXT) and extracting text.
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from src.core.database import DatabaseManager
 from src.core.vector_store import VectorStore
@@ -51,7 +51,7 @@ def process_uploaded_file(
     exam_ids: Optional[list[str]] = None,
     db_manager: Optional[DatabaseManager] = None,
     vector_store: Optional[VectorStore] = None
-) -> Document:
+) -> Tuple[Document, Optional[str]]:
     """
     Full ingestion pipeline for a single file:
     1. Extract text.
@@ -85,26 +85,28 @@ def process_uploaded_file(
     filename = os.path.basename(file_path)
     content_hash = db_manager.compute_content_hash(text)
 
-    # Check if document already exists (same content) within this course
-    existing_doc = db_manager.get_document_by_hash(course_id, content_hash)
-    
-    # 3. Save Document (SQLite) or reuse existing
-    if existing_doc:
-        doc = existing_doc
-        # Make sure we use the freshly extracted text in case it changed
-        doc.extracted_text = text
-        print(f"Document {filename} already ingested for this course; refreshing chunks/embeddings.")
-    else:
-        print("Saving document metadata...")
-        doc = db_manager.add_document(filename=filename, text=text, course_id=course_id)
-    
-    # 3b. If doc existed, clear old chunks/embeddings before re-chunking
-    if existing_doc:
-        old_chunk_ids = db_manager.get_chunk_ids_for_doc(doc.doc_id)
-        if old_chunk_ids:
-            db_manager.delete_chunks_for_doc(doc.doc_id)
-            vector_store.delete_chunks(old_chunk_ids)
-    
+    # Duplicate checks by hash and filename
+    existing_doc_by_hash = db_manager.get_document_by_hash(course_id, content_hash)
+    if existing_doc_by_hash:
+        print(f"Identical document already exists ({existing_doc_by_hash.original_filename}). Skipping re-ingestion.")
+        # Still attach to any provided exams
+        if exam_ids:
+            for exam_id in exam_ids:
+                db_manager.attach_document_to_exam(exam_id, existing_doc_by_hash.doc_id)
+        return existing_doc_by_hash, f"Identical document already exists ({existing_doc_by_hash.original_filename})"
+
+    existing_doc_by_name = db_manager.get_document_by_name(course_id, filename)
+    if existing_doc_by_name:
+        print("Document of the same name already uploaded.")
+        if exam_ids:
+            for exam_id in exam_ids:
+                db_manager.attach_document_to_exam(exam_id, existing_doc_by_name.doc_id)
+        return existing_doc_by_name, "Document of the same name already uploaded."
+
+    # 3. Save Document (SQLite)
+    print("Saving document metadata...")
+    doc = db_manager.add_document(filename=filename, text=text, course_id=course_id)
+
     # 4. Chunking
     print("Chunking document...")
     chunks = chunk_document(doc)
@@ -124,4 +126,4 @@ def process_uploaded_file(
             db_manager.attach_document_to_exam(exam_id, doc.doc_id)
     
     print("Ingestion complete.")
-    return doc
+    return doc, None
