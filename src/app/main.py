@@ -101,6 +101,59 @@ def create_app():
         problems = db_manager.list_problems_for_exam(exam_id)
         assignments = db_manager.list_assignments_for_exam(exam_id)
         assignment_lookup = {a.assignment_id: a for a in assignments}
+
+        display_mode = request.args.get("display", "chunks")
+        ranking_strategy = request.args.get("ranking", "frequency").lower()
+        ranking_is_frequency = ranking_strategy == "frequency"
+        try:
+            ranking_limit = max(1, int(request.args.get("limit", "5")))
+        except ValueError:
+            ranking_limit = 5
+
+        ranking_options = db_manager.available_ranking_strategies()
+        top_chunks = []
+        top_documents = []
+
+        if display_mode == "documents":
+            display_mode = "documents"
+            top_documents_raw = db_manager.get_top_documents_for_exam(
+                exam_id=exam_id,
+                ranking_strategy=ranking_strategy,
+                limit=ranking_limit,
+            )
+            top_documents = [
+                {
+                    "rank": idx,
+                    "doc_id": row["doc_id"],
+                    "filename": row["filename"],
+                    "score": row["score"],
+                    "score_display": row["score"] if ranking_is_frequency else None,
+                }
+                for idx, row in enumerate(top_documents_raw, start=1)
+            ]
+        else:
+            display_mode = "chunks"
+            top_chunks_raw = db_manager.get_top_chunks_for_exam(
+                exam_id=exam_id,
+                ranking_strategy=ranking_strategy,
+                limit=ranking_limit,
+            )
+            doc_lookup = db_manager.get_doc_filenames(
+                list({row["doc_id"] for row in top_chunks_raw})
+            )
+            top_chunks = [
+                {
+                    "rank": idx,
+                    "chunk_id": row["chunk_id"],
+                    "doc_id": row["doc_id"],
+                    "doc_name": doc_lookup.get(row["doc_id"], row["doc_id"]),
+                    "chunk_index": row["chunk_index"],
+                    "chunk_text": row["chunk_text"],
+                    "score": row["score"],
+                    "score_display": row["score"] if ranking_is_frequency else None,
+                }
+                for idx, row in enumerate(top_chunks_raw, start=1)
+            ]
         return render_template(
             'exam.html',
             course=course,
@@ -110,6 +163,13 @@ def create_app():
             problems=problems,
             assignments=assignments,
             assignment_lookup=assignment_lookup,
+            display_mode=display_mode,
+            ranking_strategy=ranking_strategy,
+            ranking_is_frequency=ranking_is_frequency,
+            ranking_limit=ranking_limit,
+            ranking_options=ranking_options,
+            top_chunks=top_chunks,
+            top_documents=top_documents,
         )
 
     @app.route('/courses/<course_id>/exams/<exam_id>/documents', methods=['POST'])

@@ -49,6 +49,96 @@
     </section>
 
     <section>
+        <h3>Retrieval overview</h3>
+        <form method="get" action="{{ url_for('view_exam', course_id=course.course_id, exam_id=exam.exam_id) }}">
+            <div class="grid">
+                <label>
+                    Show
+                    <select name="display">
+                        <option value="chunks" {% if display_mode == 'chunks' %}selected{% endif %}>Chunks</option>
+                        <option value="documents" {% if display_mode == 'documents' %}selected{% endif %}>Documents</option>
+                    </select>
+                </label>
+                <label>
+                    Ranking order
+                    <select name="ranking">
+                        {% for key, label in ranking_options.items() %}
+                            <option value="{{ key }}" {% if ranking_strategy == key %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    Top K
+                    <input type="number" name="limit" min="1" step="1" value="{{ ranking_limit }}">
+                </label>
+            </div>
+            <button type="submit">Update view</button>
+        </form>
+
+        {% if display_mode == 'chunks' %}
+            {% if top_chunks %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Source</th>
+                            <th>Chunk</th>
+                            <th>{% if ranking_is_frequency %}Frequency{% else %}Score{% endif %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for chunk in top_chunks %}
+                            <tr>
+                                <td>{{ chunk.rank }}</td>
+                                <td>{{ chunk.doc_name }} (Chunk {{ chunk.chunk_index }})</td>
+                                <td>{{ chunk.chunk_text[:200] }}{% if chunk.chunk_text|length > 200 %}…{% endif %}</td>
+                                <td>
+                                    {% if ranking_is_frequency %}
+                                        {{ chunk.score_display or chunk.score }}
+                                    {% else %}
+                                        {{ '%.3f'|format(chunk.score) }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p class="muted">No retrievals logged for this exam yet.</p>
+            {% endif %}
+        {% else %}
+            {% if top_documents %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Document</th>
+                            <th>{% if ranking_is_frequency %}Frequency{% else %}Score{% endif %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for doc in top_documents %}
+                            <tr>
+                                <td>{{ doc.rank }}</td>
+                                <td>{{ doc.filename }}</td>
+                                <td>
+                                    {% if ranking_is_frequency %}
+                                        {{ doc.score_display or doc.score }}
+                                    {% else %}
+                                        {{ '%.3f'|format(doc.score) }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p class="muted">No document retrievals to rank yet.</p>
+            {% endif %}
+        {% endif %}
+    </section>
+
+    <section>
         <h3>Problems</h3>
         {% if problems %}
             <ul>

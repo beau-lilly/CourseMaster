@@ -5,7 +5,7 @@ import uuid
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 # Import our defined types and config
 from .config import DB_PATH
@@ -651,6 +651,23 @@ class DatabaseManager:
 
     # --- Problems & retrieval ---
 
+    @staticmethod
+    def _ranking_expression(ranking_strategy: str) -> str:
+        """Return the SQL aggregate used to rank chunks/documents."""
+        strategies = {
+            "frequency": "COUNT(DISTINCT rl.problem_id)",
+            "weighted_sum": "SUM(rl.similarity_score)",
+        }
+        return strategies.get(ranking_strategy.lower(), strategies["frequency"])
+
+    @staticmethod
+    def available_ranking_strategies() -> dict[str, str]:
+        """Expose human-readable ranking strategies for UI selection."""
+        return {
+            "frequency": "Frequency (distinct problems)",
+            "weighted_sum": "Weighted Sum (similarity total)",
+        }
+
     def add_problem(
         self,
         text: str,
@@ -755,6 +772,87 @@ class DatabaseManager:
             if chunk:
                 ordered.append((chunk, r["similarity"]))
         return ordered
+
+    def get_top_chunks_for_exam(
+        self,
+        exam_id: str,
+        ranking_strategy: str,
+        limit: int = 5,
+    ) -> List[dict[str, Any]]:
+        """Aggregate retrievals to surface the highest-ranked chunks for an exam."""
+        if limit <= 0:
+            return []
+
+        aggregate = self._ranking_expression(ranking_strategy)
+        is_frequency = ranking_strategy.lower() == "frequency"
+        sql = f"""
+        SELECT
+            c.chunk_id,
+            c.doc_id,
+            c.chunk_text,
+            c.chunk_index,
+            {aggregate} AS rank_value
+        FROM retrieval_log rl
+        JOIN problems p ON p.problem_id = rl.problem_id
+        JOIN chunks c ON c.chunk_id = rl.retrieved_chunk_id
+        WHERE p.exam_id = ?
+        GROUP BY c.chunk_id, c.doc_id, c.chunk_text, c.chunk_index
+        ORDER BY rank_value DESC, c.chunk_id
+        LIMIT ?
+        """
+
+        with self._get_connection() as conn:
+            rows = conn.execute(sql, (exam_id, limit)).fetchall()
+
+        return [
+            {
+                "chunk_id": row["chunk_id"],
+                "doc_id": row["doc_id"],
+                "chunk_text": row["chunk_text"],
+                "chunk_index": row["chunk_index"],
+                "score": int(row["rank_value"]) if is_frequency else float(row["rank_value"]),
+            }
+            for row in rows
+        ]
+
+    def get_top_documents_for_exam(
+        self,
+        exam_id: str,
+        ranking_strategy: str,
+        limit: int = 5,
+    ) -> List[dict[str, Any]]:
+        """Aggregate retrievals to surface the highest-ranked source documents for an exam."""
+        if limit <= 0:
+            return []
+
+        aggregate = self._ranking_expression(ranking_strategy)
+        is_frequency = ranking_strategy.lower() == "frequency"
+        sql = f"""
+        SELECT
+            d.doc_id,
+            d.original_filename,
+            {aggregate} AS rank_value
+        FROM retrieval_log rl
+        JOIN problems p ON p.problem_id = rl.problem_id
+        JOIN chunks c ON c.chunk_id = rl.retrieved_chunk_id
+        JOIN documents d ON d.doc_id = c.doc_id
+        WHERE p.exam_id = ?
+        GROUP BY d.doc_id, d.original_filename
+        ORDER BY rank_value DESC, d.doc_id
+        LIMIT ?
+        """
+
+        with self._get_connection() as conn:
+            rows = conn.execute(sql, (exam_id, limit)).fetchall()
+
+        return [
+            {
+                "doc_id": row["doc_id"],
+                "filename": row["original_filename"],
+                "score": int(row["rank_value"]) if is_frequency else float(row["rank_value"]),
+            }
+            for row in rows
+        ]
 
     # --- Questions ---
 

@@ -162,3 +162,58 @@ def test_questions_round_trip(tmp_path):
     assert stored.answer_text == "It converts light to energy."
     questions = db.list_questions_for_problem(problem.problem_id)
     assert len(questions) == 1
+
+
+def _seed_retrieval_data(tmp_path):
+    db_path = tmp_path / "ranking.db"
+    db = DatabaseManager(db_path=str(db_path))
+    course = db.add_course("Course A")
+    exam = db.add_exam(course.course_id, "Final")
+
+    doc1 = db.add_document("doc1.pdf", "Doc one text", course_id=course.course_id)
+    doc2 = db.add_document("doc2.pdf", "Doc two text", course_id=course.course_id)
+    db.attach_documents_to_exam(exam.exam_id, [doc1.doc_id, doc2.doc_id])
+
+    chunks = [
+        Chunk(chunk_id="chunk-a", doc_id=doc1.doc_id, chunk_text="Chunk A", chunk_index=0),
+        Chunk(chunk_id="chunk-b", doc_id=doc1.doc_id, chunk_text="Chunk B", chunk_index=1),
+        Chunk(chunk_id="chunk-c", doc_id=doc2.doc_id, chunk_text="Chunk C", chunk_index=0),
+    ]
+    db.save_chunks(chunks)
+
+    prob1 = db.add_problem("Problem one", exam_id=exam.exam_id)
+    prob2 = db.add_problem("Problem two", exam_id=exam.exam_id)
+
+    db.log_retrieval(prob1.problem_id, "chunk-a", 0.9)
+    db.log_retrieval(prob1.problem_id, "chunk-b", 0.5)
+    db.log_retrieval(prob2.problem_id, "chunk-a", 0.8)
+    db.log_retrieval(prob2.problem_id, "chunk-c", 0.7)
+
+    return db, exam, doc1, doc2
+
+
+def test_top_chunks_ranking(tmp_path):
+    db, exam, _, _ = _seed_retrieval_data(tmp_path)
+
+    freq = db.get_top_chunks_for_exam(exam.exam_id, "frequency", limit=3)
+    assert [row["chunk_id"] for row in freq] == ["chunk-a", "chunk-b", "chunk-c"]
+    assert freq[0]["score"] == 2
+
+    weighted = db.get_top_chunks_for_exam(exam.exam_id, "weighted_sum", limit=2)
+    assert [row["chunk_id"] for row in weighted] == ["chunk-a", "chunk-c"]
+    assert weighted[0]["score"] == pytest.approx(1.7)
+    assert weighted[1]["score"] == pytest.approx(0.7)
+
+
+def test_top_documents_ranking(tmp_path):
+    db, exam, doc1, doc2 = _seed_retrieval_data(tmp_path)
+
+    freq = db.get_top_documents_for_exam(exam.exam_id, "frequency", limit=2)
+    assert [row["doc_id"] for row in freq] == [doc1.doc_id, doc2.doc_id]
+    assert freq[0]["score"] == 2
+    assert freq[1]["score"] == 1
+
+    weighted = db.get_top_documents_for_exam(exam.exam_id, "weighted_sum", limit=2)
+    assert [row["doc_id"] for row in weighted] == [doc1.doc_id, doc2.doc_id]
+    assert weighted[0]["score"] == pytest.approx(2.2)
+    assert weighted[1]["score"] == pytest.approx(0.7)
