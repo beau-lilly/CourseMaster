@@ -51,9 +51,9 @@
         {% endif %}
 
         <form action="{{ url_for('upload_course_document', course_id=course.course_id) }}" method="POST" enctype="multipart/form-data">
-            <label for="document">
-                Upload document to course
-                <input type="file" id="document" name="document" required>
+            <label for="documents">
+                Upload documents to course
+                <input type="file" id="documents" name="documents" multiple required>
             </label>
             <button type="submit">Upload</button>
         </form>

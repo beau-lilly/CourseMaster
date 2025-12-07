@@ -13,8 +13,8 @@ from .types import Assignment, Course, Exam, Document, Chunk, Problem, Question
 
 DEFAULT_COURSE_ID = "course_default"
 DEFAULT_EXAM_ID = "exam_default"
-DEFAULT_COURSE_NAME = "__default_course__"
-DEFAULT_EXAM_NAME = "__default_exam__"
+DEFAULT_COURSE_NAME = "CS 372"
+DEFAULT_EXAM_NAME = "Final"
 
 
 class DatabaseManager:
@@ -298,22 +298,32 @@ class DatabaseManager:
 
     def _ensure_default_course_and_exam(self, conn: sqlite3.Connection):
         """Create default course/exam for legacy rows without scope."""
-        course_exists = conn.execute(
-            "SELECT 1 FROM courses WHERE course_id = ?", (DEFAULT_COURSE_ID,)
+        course_row = conn.execute(
+            "SELECT course_id, name FROM courses WHERE course_id = ?", (DEFAULT_COURSE_ID,)
         ).fetchone()
-        if not course_exists:
+        if not course_row:
             conn.execute(
                 "INSERT OR IGNORE INTO courses (course_id, name, created_at) VALUES (?, ?, ?)",
                 (DEFAULT_COURSE_ID, DEFAULT_COURSE_NAME, datetime.now().isoformat()),
             )
+        elif course_row["name"] != DEFAULT_COURSE_NAME:
+            conn.execute(
+                "UPDATE courses SET name = ? WHERE course_id = ?",
+                (DEFAULT_COURSE_NAME, DEFAULT_COURSE_ID),
+            )
 
-        exam_exists = conn.execute(
-            "SELECT 1 FROM exams WHERE exam_id = ?", (DEFAULT_EXAM_ID,)
+        exam_row = conn.execute(
+            "SELECT exam_id, name FROM exams WHERE exam_id = ?", (DEFAULT_EXAM_ID,)
         ).fetchone()
-        if not exam_exists:
+        if not exam_row:
             conn.execute(
                 "INSERT OR IGNORE INTO exams (exam_id, course_id, name, created_at) VALUES (?, ?, ?, ?)",
                 (DEFAULT_EXAM_ID, DEFAULT_COURSE_ID, DEFAULT_EXAM_NAME, datetime.now().isoformat()),
+            )
+        elif exam_row["name"] != DEFAULT_EXAM_NAME:
+            conn.execute(
+                "UPDATE exams SET name = ? WHERE exam_id = ?",
+                (DEFAULT_EXAM_NAME, DEFAULT_EXAM_ID),
             )
 
     def _backfill_missing_course_ids(self, conn: sqlite3.Connection):

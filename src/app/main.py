@@ -20,7 +20,17 @@ def _save_upload(file) -> str:
     """Persist an uploaded file to disk and return its path."""
     os.makedirs(UPLOAD_ROOT, exist_ok=True)
     filename = secure_filename(file.filename)
-    file_path = os.path.join(UPLOAD_ROOT, filename)
+    name, ext = os.path.splitext(filename)
+    candidate = filename
+    file_path = os.path.join(UPLOAD_ROOT, candidate)
+
+    # Avoid clobbering files with the same name within a batch
+    counter = 1
+    while os.path.exists(file_path):
+        candidate = f"{name}_{counter}{ext}"
+        file_path = os.path.join(UPLOAD_ROOT, candidate)
+        counter += 1
+
     file.save(file_path)
     return file_path
 
@@ -68,16 +78,29 @@ def create_app():
         if not course:
             return redirect(url_for('index'))
 
-        file = request.files.get('document')
-        if not file or file.filename == '':
+        files = [
+            f for f in request.files.getlist('documents')
+            if f and f.filename
+        ]
+        if not files:
             return redirect(url_for('view_course', course_id=course_id))
 
-        file_path = _save_upload(file)
-        _, message = process_uploaded_file(file_path, course_id=course_id, exam_ids=None, db_manager=db_manager)
-        if message:
-            flash(message, "warning")
-        else:
-            flash("Document uploaded successfully.", "success")
+        success_count = 0
+        for file in files:
+            file_path = _save_upload(file)
+            _, message = process_uploaded_file(
+                file_path,
+                course_id=course_id,
+                exam_ids=None,
+                db_manager=db_manager
+            )
+            if message:
+                flash(message, "warning")
+            else:
+                success_count += 1
+
+        if success_count:
+            flash(f"{success_count} document(s) uploaded successfully.", "success")
         return redirect(url_for('view_course', course_id=course_id))
 
     @app.route('/courses/<course_id>/exams', methods=['POST'])
@@ -184,16 +207,29 @@ def create_app():
         if not course or not exam:
             return redirect(url_for('index'))
 
-        file = request.files.get('document')
-        if not file or file.filename == '':
+        files = [
+            f for f in request.files.getlist('documents')
+            if f and f.filename
+        ]
+        if not files:
             return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
 
-        file_path = _save_upload(file)
-        _, message = process_uploaded_file(file_path, course_id=course_id, exam_ids=[exam_id], db_manager=db_manager)
-        if message:
-            flash(message, "warning")
-        else:
-            flash("Document uploaded successfully.", "success")
+        success_count = 0
+        for file in files:
+            file_path = _save_upload(file)
+            _, message = process_uploaded_file(
+                file_path,
+                course_id=course_id,
+                exam_ids=[exam_id],
+                db_manager=db_manager
+            )
+            if message:
+                flash(message, "warning")
+            else:
+                success_count += 1
+
+        if success_count:
+            flash(f"{success_count} document(s) uploaded successfully.", "success")
         return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
 
     @app.route('/courses/<course_id>/exams/<exam_id>/documents/attach', methods=['POST'])

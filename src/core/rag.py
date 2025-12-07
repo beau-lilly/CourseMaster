@@ -21,43 +21,61 @@ load_dotenv()
 
 # --- 1. Prompt Templates ---
 
-TEMPLATE_MINIMAL = """You are a helpful assistant. Answer the user's question based ONLY on the provided context.
+TEMPLATE_MINIMAL = """You are a helpful assistant. The user is working on the problem below.
+
+Problem:
+{problem_text}
+
+Answer the user's question about this problem based on the provided context.
 Keep your answer brief and to the point.
 
-Context:
+Context (retrieved chunks related to the problem):
 {context}
 
-Question: {question}
+Question about the problem: {question}
 Answer:
 """
 
-TEMPLATE_EXPLANATORY = """You are an expert tutor. Answer the user's question using the provided context.
+TEMPLATE_EXPLANATORY = """You are an expert tutor. The user is working on the problem below.
+
+Problem:
+{problem_text}
+
+Answer the user's question about this problem using the provided context.
 You must cite the specific chunk index (e.g., [Chunk 1]) that supports each part of your answer.
 
-Context:
+Context (retrieved chunks related to the problem):
 {context}
 
-Question: {question}
+Question about the problem: {question}
 Answer (with citations):
 """
 
-TEMPLATE_TUTORING = """You are a Socratic tutor. Do not give the answer directly.
-Instead, use the context to guide the user toward the answer with a hint or a leading question.
+TEMPLATE_TUTORING = """You are a Socratic tutor helping with the problem below.
 
-Context:
+Problem:
+{problem_text}
+
+Do not give the answer directly. Instead, use the context to guide the user toward the answer with a hint or a leading question.
+
+Context (retrieved chunks related to the problem):
 {context}
 
-Question: {question}
+Question about the problem: {question}
 Hint:
 """
 
-TEMPLATE_SIMILARITY = """Analyze why the following chunks were retrieved for the user's question.
+TEMPLATE_SIMILARITY = """Analyze why the following chunks were retrieved for the user's question about the problem below.
+
+Problem:
+{problem_text}
+
 Explain the relevance of each chunk to the query.
 
-Context:
+Context (retrieved chunks related to the problem):
 {context}
 
-Question: {question}
+Question about the problem: {question}
 Analysis:
 """
 
@@ -194,7 +212,13 @@ def answer_question(
     # 5. Execute
     context_str = format_docs(chunks)
     try:
-        answer = chain.invoke({"context": context_str, "question": question_text})
+        answer = chain.invoke(
+            {
+                "context": context_str,
+                "question": question_text,
+                "problem_text": problem.problem_text,
+            }
+        )
     except Exception as exc:
         # Avoid crashing the app if the remote LLM errors (e.g., bad key/network)
         print(f"LLM invocation failed ({exc}); falling back to stub.")
@@ -202,7 +226,13 @@ def answer_question(
             responses=[f"[STUB RESPONSE] Unable to reach LLM ({exc}). Query: {question_text}"]
         )
         fallback_chain = prompt_template | fallback | StrOutputParser()
-        answer = fallback_chain.invoke({"context": context_str, "question": question_text})
+        answer = fallback_chain.invoke(
+            {
+                "context": context_str,
+                "question": question_text,
+                "problem_text": problem.problem_text,
+            }
+        )
 
     # Persist answer text for the question record
     db_manager.update_question_answer(stored_question.question_id, answer)

@@ -48,9 +48,9 @@
             </div>
         {% endif %}
         <form action="{{ url_for('upload_exam_document', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST" enctype="multipart/form-data">
-            <label for="document">
-                Choose file
-                <input type="file" id="document" name="document" required>
+            <label for="documents">
+                Choose files
+                <input type="file" id="documents" name="documents" multiple required>
             </label>
             <button type="submit">Upload to exam</button>
         </form>
