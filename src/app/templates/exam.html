@@ -6,8 +6,6 @@
     <h2>{{ exam.name }}</h2>
     <p class="muted">Course: {{ course.name }}</p>
 
-    {% set flashes = get_flashed_messages(with_categories=True) %}
-
     <section>
         <h3>Documents in this exam</h3>
         {% if exam_documents %}
@@ -40,13 +38,6 @@
 
     <section>
         <h4>Upload a new document</h4>
-        {% if flashes %}
-            <div class="grid" aria-live="polite">
-                {% for category, message in flashes %}
-                    <article class="{{ 'secondary' if category == 'warning' else 'success' }}">{{ message }}</article>
-                {% endfor %}
-            </div>
-        {% endif %}
         <form action="{{ url_for('upload_exam_document', course_id=course.course_id, exam_id=exam.exam_id) }}" method="POST" enctype="multipart/form-data">
             <label for="documents">
                 Choose files
@@ -154,10 +145,15 @@
                 {% for problem in problems %}
                     {% set assignment = assignment_lookup.get(problem.assignment_id) %}
                     <li>
-                        <a href="{{ url_for('view_problem', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}">
-                            {{ assignment.name if assignment else "Unassigned" }}
-                            {% if problem.problem_number is not none %} #{{ problem.problem_number }}{% endif %}
-                        </a>
+                        <div class="row-actions">
+                            <a href="{{ url_for('view_problem', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}">
+                                {{ assignment.name if assignment else "Unassigned" }}
+                                {% if problem.problem_number is not none %} #{{ problem.problem_number }}{% endif %}
+                            </a>
+                            <form action="{{ url_for('delete_problem', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}" method="POST" class="action-inline" onsubmit="return confirm('Delete this problem and all of its questions?');">
+                                <button type="submit" class="secondary">Delete</button>
+                            </form>
+                        </div>
                     </li>
                 {% endfor %}
             </ul>

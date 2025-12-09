@@ -16,3 +16,14 @@ section {
     color: #777;
     font-size: 0.95rem;
 }
+
+.row-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.action-inline {
+    margin: 0;
+    display: inline-flex;
+}

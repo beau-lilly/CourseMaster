@@ -878,7 +878,19 @@ class DatabaseManager:
             for row in rows
         ]
 
-    # --- Questions ---
+    # --- Questions & Deletion helpers ---
+
+    def delete_problem(self, problem_id: str) -> bool:
+        """
+        Remove a problem and any dependent rows (questions, retrieval logs).
+        Returns True if a problem row was deleted.
+        """
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM retrieval_log WHERE problem_id = ?", (problem_id,))
+            conn.execute("DELETE FROM questions WHERE problem_id = ?", (problem_id,))
+            cursor = conn.execute("DELETE FROM problems WHERE problem_id = ?", (problem_id,))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def add_question(
         self,
@@ -927,6 +939,13 @@ class DatabaseManager:
         with self._get_connection() as conn:
             row = conn.execute(sql, (question_id,)).fetchone()
             return self._row_to_question(row) if row else None
+
+    def delete_question(self, question_id: str) -> bool:
+        """Delete a single question."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM questions WHERE question_id = ?", (question_id,))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def list_questions_for_problem(self, problem_id: str) -> List[Question]:
         sql = "SELECT * FROM questions WHERE problem_id = ? ORDER BY created_at DESC"

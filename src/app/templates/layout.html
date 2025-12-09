@@ -20,6 +20,16 @@
             </ul>
         </nav>
 
+        {% with flashes = get_flashed_messages(with_categories=True) %}
+            {% if flashes %}
+                <div class="grid flash-messages" aria-live="polite">
+                    {% for category, message in flashes %}
+                        <article class="{{ 'secondary' if category == 'warning' else category }}">{{ message }}</article>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
         {% block content %}{% endblock %}
     </main>
 </body>

@@ -307,7 +307,7 @@ def create_app():
         course = db_manager.get_course(course_id)
         exam = db_manager.get_exam(exam_id)
         problem = db_manager.get_problem(problem_id)
-        if not course or not exam or not problem:
+        if not course or not exam or not problem or problem.exam_id != exam_id:
             return redirect(url_for('index'))
 
         assignment = db_manager.get_assignment(problem.assignment_id) if problem.assignment_id else None
@@ -324,6 +324,19 @@ def create_app():
             chunks=display_chunks,
             questions=questions,
         )
+
+    @app.route('/courses/<course_id>/exams/<exam_id>/problems/<problem_id>/delete', methods=['POST'])
+    def delete_problem(course_id: str, exam_id: str, problem_id: str):
+        """Delete a problem and its related questions/retrievals."""
+        course = db_manager.get_course(course_id)
+        exam = db_manager.get_exam(exam_id)
+        problem = db_manager.get_problem(problem_id)
+        if not course or not exam or not problem or problem.exam_id != exam_id:
+            return redirect(url_for('index'))
+
+        db_manager.delete_problem(problem_id)
+        flash("Problem deleted.", "success")
+        return redirect(url_for('view_exam', course_id=course_id, exam_id=exam_id))
 
     @app.route('/courses/<course_id>/exams/<exam_id>/problems/<problem_id>/questions', methods=['POST'])
     def ask_question(course_id: str, exam_id: str, problem_id: str):
@@ -379,6 +392,22 @@ def create_app():
             assignment=db_manager.get_assignment(problem.assignment_id) if problem.assignment_id else None,
         )
 
+    @app.route('/courses/<course_id>/exams/<exam_id>/problems/<problem_id>/questions/<question_id>/delete', methods=['POST'])
+    def delete_question(course_id: str, exam_id: str, problem_id: str, question_id: str):
+        """Delete a single question for a problem."""
+        course = db_manager.get_course(course_id)
+        exam = db_manager.get_exam(exam_id)
+        problem = db_manager.get_problem(problem_id)
+        question = db_manager.get_question(question_id)
+        if not course or not exam or not problem or not question:
+            return redirect(url_for('index'))
+        if problem.exam_id != exam_id or question.problem_id != problem_id:
+            return redirect(url_for('index'))
+
+        db_manager.delete_question(question_id)
+        flash("Question deleted.", "success")
+        return redirect(url_for('view_problem', course_id=course_id, exam_id=exam_id, problem_id=problem_id))
+
     @app.route('/courses/<course_id>/exams/<exam_id>/problems/<problem_id>/questions/<question_id>')
     def view_question(course_id: str, exam_id: str, problem_id: str, question_id: str):
         course = db_manager.get_course(course_id)
@@ -386,6 +415,8 @@ def create_app():
         problem = db_manager.get_problem(problem_id)
         question = db_manager.get_question(question_id)
         if not course or not exam or not problem or not question:
+            return redirect(url_for('index'))
+        if problem.exam_id != exam_id or question.problem_id != problem_id:
             return redirect(url_for('index'))
 
         assignment = db_manager.get_assignment(problem.assignment_id) if problem.assignment_id else None

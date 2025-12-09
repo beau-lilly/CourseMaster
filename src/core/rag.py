@@ -120,7 +120,7 @@ def build_llm(question_text: str) -> Tuple[object, str]:
     # Prefer OpenRouter for real responses
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")
     if openrouter_key and ChatOpenAI:
-        model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.1-fast")
         base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
         headers = _openrouter_headers()
         llm = ChatOpenAI(

@@ -17,7 +17,7 @@ The following Python libraries were used in this project (see requirements.txt):
 
 ## Models
 - all-MiniLM-L6-v2: A sentence-transformer model used for generating vector embeddings of document chunks. Accessed via langchain-huggingface.
-- GPT 4o mini: The default Large Language Model (LLM) used for generating answers. Accessed through the OpenRouter API.
+- Grok 4.1 Fast: Default LLM used. Accessed through OpenRouter. 
 
 
 ## Generative AI Usage

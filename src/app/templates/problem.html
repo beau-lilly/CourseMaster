@@ -4,10 +4,15 @@
 
     <a href="{{ url_for('view_exam', course_id=course.course_id, exam_id=exam.exam_id) }}">&larr; Back to {{ exam.name }}</a>
 
-    <h2>
-        {{ assignment.name if assignment else "Problem" }}
-        {% if problem.problem_number is not none %}#{{ problem.problem_number }}{% endif %}
-    </h2>
+    <div class="row-actions">
+        <h2>
+            {{ assignment.name if assignment else "Problem" }}
+            {% if problem.problem_number is not none %}#{{ problem.problem_number }}{% endif %}
+        </h2>
+        <form action="{{ url_for('delete_problem', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}" method="POST" class="action-inline" onsubmit="return confirm('Delete this problem and all of its questions?');">
+            <button type="submit" class="secondary">Delete problem</button>
+        </form>
+    </div>
     <p class="muted">Entered on {{ problem.uploaded_at }}</p>
 
     <article>
@@ -63,6 +68,7 @@
                         <th>Assignment</th>
                         <th>Number</th>
                         <th>Asked</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -76,6 +82,11 @@
                             <td>{{ assignment.name if assignment else "Unassigned" }}</td>
                             <td>{% if problem.problem_number is not none %}{{ problem.problem_number }}{% else %}&mdash;{% endif %}</td>
                             <td>{{ q.created_at }}</td>
+                            <td>
+                                <form action="{{ url_for('delete_question', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id, question_id=q.question_id) }}" method="POST" class="action-inline" onsubmit="return confirm('Delete this question?');">
+                                    <button type="submit" class="secondary">Delete</button>
+                                </form>
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>

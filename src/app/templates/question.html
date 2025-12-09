@@ -4,7 +4,14 @@
 
     <a href="{{ url_for('view_problem', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id) }}">&larr; Back to problem</a>
 
-    <h2>Question</h2>
+    <div class="row-actions">
+        <h2>Question</h2>
+        {% if question %}
+            <form action="{{ url_for('delete_question', course_id=course.course_id, exam_id=exam.exam_id, problem_id=problem.problem_id, question_id=question.question_id) }}" method="POST" class="action-inline" onsubmit="return confirm('Delete this question?');">
+                <button type="submit" class="secondary">Delete question</button>
+            </form>
+        {% endif %}
+    </div>
     <article>
         <header><strong>Problem</strong></header>
         <p>{{ problem.problem_text }}</p>

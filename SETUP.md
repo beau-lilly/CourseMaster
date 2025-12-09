@@ -35,10 +35,7 @@
 The app now prefers [OpenRouter](https://openrouter.ai/) for LLM calls.
 
 1. Copy `.env.example` to `.env`.
-2. Set `OPENROUTER_API_KEY` (and optionally `OPENROUTER_MODEL` and `OPENROUTER_BASE_URL` if you want a different model/endpoint).
-3. (Optional) Add `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME` if you want to forward attribution headers that OpenRouter recommends.
-4. If you want to fall back to direct OpenAI, set `OPENAI_API_KEY` instead.
+2. Set `OPENROUTER_API_KEY` and optionally `OPENROUTER_MODEL`
+3. If you want to fall back to direct OpenAI, set `OPENAI_API_KEY` instead of the OpenRouter key
 
-Notes:
-- The app now loads `.env` automatically (via `python-dotenv`), so you do not need to export variables manually.
 - If no key is present, the app automatically uses a stubbed LLM so tests stay offline-safe.
