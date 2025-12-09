@@ -205,6 +205,55 @@ def test_top_chunks_ranking(tmp_path):
     assert weighted[1]["score"] == pytest.approx(0.7)
 
 
+def test_delete_course_cascades_all_relations(tmp_path):
+    db_path = tmp_path / "delete_course.db"
+    db = DatabaseManager(db_path=str(db_path))
+    course = db.add_course("Course to delete")
+    exam = db.add_exam(course.course_id, "Midterm")
+    assignment = db.add_assignment(exam.exam_id, "Homework 1")
+
+    doc = db.add_document("doc.pdf", "sample content", course_id=course.course_id)
+    chunk = Chunk(chunk_id="chunk-1", doc_id=doc.doc_id, chunk_text="chunk body", chunk_index=0)
+    db.save_chunks([chunk])
+    db.attach_document_to_exam(exam.exam_id, doc.doc_id)
+
+    problem = db.add_problem(
+        "What is AI?",
+        exam_id=exam.exam_id,
+        assignment_id=assignment.assignment_id,
+        problem_number=1,
+    )
+    question = db.add_question(problem.problem_id, "Explain", prompt_style="minimal")
+    db.update_question_answer(question.question_id, "an answer")
+    db.log_retrieval(problem.problem_id, chunk.chunk_id, 0.9)
+
+    deleted, chunk_ids = db.delete_course(course.course_id)
+
+    assert deleted is True
+    assert set(chunk_ids) == {chunk.chunk_id}
+
+    with db._get_connection() as conn:
+        assert conn.execute("SELECT 1 FROM courses WHERE course_id = ?", (course.course_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM exams WHERE exam_id = ?", (exam.exam_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM assignments WHERE exam_id = ?", (exam.exam_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM documents WHERE doc_id = ?", (doc.doc_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM chunks WHERE doc_id = ?", (doc.doc_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM problems WHERE problem_id = ?", (problem.problem_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM questions WHERE problem_id = ?", (problem.problem_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM retrieval_log WHERE problem_id = ?", (problem.problem_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM exam_documents WHERE exam_id = ?", (exam.exam_id,)).fetchone() is None
+
+
+def test_delete_course_missing_is_noop(tmp_path):
+    db_path = tmp_path / "missing_course.db"
+    db = DatabaseManager(db_path=str(db_path))
+
+    deleted, chunk_ids = db.delete_course("course_missing")
+
+    assert deleted is False
+    assert chunk_ids == []
+
+
 def test_top_documents_ranking(tmp_path):
     db, exam, doc1, doc2 = _seed_retrieval_data(tmp_path)
 

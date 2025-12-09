@@ -379,6 +379,74 @@ class DatabaseManager:
             rows = conn.execute(sql).fetchall()
             return [self._row_to_course(row) for row in rows]
 
+    def delete_course(self, course_id: str) -> tuple[bool, list[str]]:
+        """
+        Delete a course and everything attached to it.
+        Returns a tuple of (deleted, chunk_ids) so callers can also remove vectors.
+        """
+        with self._get_connection() as conn:
+            course_row = conn.execute(
+                "SELECT course_id FROM courses WHERE course_id = ?", (course_id,)
+            ).fetchone()
+            if not course_row:
+                return False, []
+
+            exam_ids = [
+                row["exam_id"]
+                for row in conn.execute(
+                    "SELECT exam_id FROM exams WHERE course_id = ?", (course_id,)
+                ).fetchall()
+            ]
+            doc_ids = [
+                row["doc_id"]
+                for row in conn.execute(
+                    "SELECT doc_id FROM documents WHERE course_id = ?", (course_id,)
+                ).fetchall()
+            ]
+
+            problem_ids: list[str] = []
+            if exam_ids:
+                placeholders = ",".join("?" * len(exam_ids))
+                problem_ids = [
+                    row["problem_id"]
+                    for row in conn.execute(
+                        f"SELECT problem_id FROM problems WHERE exam_id IN ({placeholders})",
+                        exam_ids,
+                    ).fetchall()
+                ]
+
+            chunk_ids: list[str] = []
+            if doc_ids:
+                placeholders = ",".join("?" * len(doc_ids))
+                chunk_ids = [
+                    row["chunk_id"]
+                    for row in conn.execute(
+                        f"SELECT chunk_id FROM chunks WHERE doc_id IN ({placeholders})",
+                        doc_ids,
+                    ).fetchall()
+                ]
+
+            def _delete_in(table: str, column: str, ids: list[str]):
+                if not ids:
+                    return
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(f"DELETE FROM {table} WHERE {column} IN ({placeholders})", ids)
+
+            _delete_in("retrieval_log", "problem_id", problem_ids)
+            _delete_in("retrieval_log", "retrieved_chunk_id", chunk_ids)
+            _delete_in("questions", "problem_id", problem_ids)
+            _delete_in("problems", "problem_id", problem_ids)
+            _delete_in("exam_documents", "exam_id", exam_ids)
+            _delete_in("exam_documents", "doc_id", doc_ids)
+            _delete_in("chunks", "doc_id", doc_ids)
+            _delete_in("assignments", "exam_id", exam_ids)
+            _delete_in("documents", "doc_id", doc_ids)
+            _delete_in("exams", "exam_id", exam_ids)
+            conn.execute("DELETE FROM courses WHERE course_id = ?", (course_id,))
+            conn.commit()
+
+        return True, chunk_ids
+
     # --- Exams ---
 
     def add_exam(self, course_id: str, name: str) -> Exam:

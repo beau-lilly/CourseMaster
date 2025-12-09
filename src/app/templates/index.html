@@ -7,7 +7,12 @@
         <ul>
             {% for course in courses %}
                 <li>
-                    <a href="{{ url_for('view_course', course_id=course.course_id) }}">{{ course.name }}</a>
+                    <div class="row-actions">
+                        <a href="{{ url_for('view_course', course_id=course.course_id) }}">{{ course.name }}</a>
+                        <form action="{{ url_for('delete_course', course_id=course.course_id) }}" method="POST" class="action-inline" onsubmit="return confirm('Delete this course and everything in it?');">
+                            <button type="submit" class="secondary">Delete</button>
+                        </form>
+                    </div>
                 </li>
             {% endfor %}
         </ul>

@@ -11,6 +11,7 @@ from src.core.ingestion import process_uploaded_file
 from src.core.types import PromptStyle
 from src.core.database import DatabaseManager
 from src.core.retrieval import index_problem_context
+from src.core.vector_store import VectorStore
 
 
 UPLOAD_ROOT = os.path.join(os.getcwd(), "data", "raw")
@@ -56,6 +57,31 @@ def create_app():
             return redirect(url_for('index'))
         course = db_manager.add_course(name)
         return redirect(url_for('view_course', course_id=course.course_id))
+
+    @app.route('/courses/<course_id>/delete', methods=['POST'])
+    def delete_course(course_id: str):
+        course = db_manager.get_course(course_id)
+        if not course:
+            flash("Course not found.", "warning")
+            return redirect(url_for('index'))
+
+        deleted, chunk_ids = db_manager.delete_course(course_id)
+        if not deleted:
+            flash("Course not found.", "warning")
+            return redirect(url_for('index'))
+
+        cleanup_failed = False
+        if chunk_ids:
+            try:
+                VectorStore().delete_chunks(chunk_ids)
+            except Exception:
+                cleanup_failed = True
+
+        if cleanup_failed:
+            flash(f"Deleted '{course.name}', but search index cleanup may be incomplete.", "warning")
+        else:
+            flash(f"Deleted course '{course.name}'.", "success")
+        return redirect(url_for('index'))
 
     @app.route('/courses/<course_id>')
     def view_course(course_id: str):

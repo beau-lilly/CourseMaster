@@ -23,13 +23,18 @@ section {
     gap: 0.5rem;
 }
 
+.row-actions h2 {
+    margin: 0;
+}
+
 .action-inline {
     margin: 0;
     display: inline-flex;
 }
 
 .action-inline button {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.9rem;
-    line-height: 1.2;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.85rem;
+    line-height: 1;
+    min-height: auto;
 }
