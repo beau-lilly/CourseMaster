@@ -23,8 +23,10 @@ Open http://127.0.0.1:5000 in your browser
 
 ## Video Links
 
-User demo: https://drive.google.com/file/d/1F92zR_r7mM3U2Fb2Ef4yUyqF03LX-AQ6/view?usp=drive_link
-Technical Demo: https://drive.google.com/file/d/19yvM_a5_RRiv5ngzUN8J7MJU4ov6q7-Q/view?usp=drive_link
+- [User Demo (Local File)](videos/user_demo.mp4)
+    - https://drive.google.com/file/d/1F92zR_r7mM3U2Fb2Ef4yUyqF03LX-AQ6/view?usp=drive_link
+- [Technical Walkthrough (Local File)](videos/technical_demo.mp4)
+    - https://drive.google.com/file/d/19yvM_a5_RRiv5ngzUN8J7MJU4ov6q7-Q/view?usp=drive_link
 
 
 ## Evaluation
