@@ -41,7 +41,7 @@ Design/implementation decisions and details included:
     - Using LangChain’s recursive splitter
     - Fixed length chunk size of 1000 characters
     - Chunk overlap of 200 characters
-    - Merging step where chunks of <300 characters are merged into previous neighbor (happens at Document cutoffs).
+    - Merging step where chunks of <300 characters are merged into next neighbor (happens at Document cutoffs).
 - Embeddings 
     - Used sentence-transformers/all-MiniLM-L6-v2 model from HuggingFace. Passed to ChromaDB and called internally through the similarity_search_with_score() and add_documents() methods
     - Normalize vectors for the matching step
